@@ -10,14 +10,14 @@
  *   npm run keep-alive
  * 
  * Environment variables:
- *   RENDER_BACKEND_URL=https://sitecompiler-backend.onrender.com
+ *   RENDER_BACKEND_URL=https://site-compiler.onrender.com
  *   PING_INTERVAL_MINUTES=5
  */
 
 const https = require('https');
 const http = require('http');
 
-const backendUrl = (process.env.RENDER_BACKEND_URL || 'https://sitecompiler-backend.onrender.com').replace(/\/$/, '');
+const backendUrl = (process.env.RENDER_BACKEND_URL || 'https://site-compiler.onrender.com').replace(/\/$/, '');
 const healthUrl = `${backendUrl}/health`;
 const intervalMinutes = parseInt(process.env.PING_INTERVAL_MINUTES || '5', 10);
 const intervalMs = intervalMinutes * 60 * 1000;

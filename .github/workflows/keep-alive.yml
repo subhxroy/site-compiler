@@ -14,7 +14,7 @@ jobs:
         env:
           RENDER_URL: ${{ secrets.RENDER_BACKEND_URL }}
         run: |
-          TARGET_URL="${RENDER_URL:-https://sitecompiler-backend.onrender.com}/health"
+          TARGET_URL="${RENDER_URL:-https://site-compiler.onrender.com}/health"
           echo "Pinging Render Health Endpoint: $TARGET_URL at $(date -u)"
           
           # Send GET request with 15s timeout
