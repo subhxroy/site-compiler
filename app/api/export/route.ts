@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createJob, processExportJob } from '@/lib/jobs/queue';
+import { API_BASE_URL } from '@/lib/api-config';
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
     }
 
+    // Proxy request to Express/Render backend if configured
+    if (API_BASE_URL) {
+      try {
+        const backendRes = await fetch(`${API_BASE_URL}/api/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: parsedUrl.href, format }),
+        });
+        const data = await backendRes.json();
+        return NextResponse.json(data, { status: backendRes.status });
+      } catch (proxyError: any) {
+        console.error('Failed to proxy export request to Render backend:', proxyError);
+        return NextResponse.json(
+          { error: `Backend service unavailable (${API_BASE_URL}). ${proxyError.message}` },
+          { status: 502 }
+        );
+      }
+    }
+
+    // Local Node.js execution fallback
     const job = createJob(parsedUrl.href, format);
     
     // Trigger asynchronous job processing in background without blocking API response
