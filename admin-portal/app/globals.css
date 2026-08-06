@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #040506;
+    color: #9c9c9d;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  }
+}
+
+.raycast-key-card {
+  background-color: #07080a;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.raycast-inset-input {
+  background-color: #111214;
+  border: 1px solid #2f3031;
+  border-radius: 10px;
+}
