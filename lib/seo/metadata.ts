@@ -13,7 +13,7 @@ export interface MetaInput {
   author?: string;
 }
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://sitecompiler.com';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://site-compiler.netlify.app';
 const SITE_NAME = 'SiteCompiler';
 
 export function buildMetadata({

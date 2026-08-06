@@ -37,7 +37,10 @@ function initAdmin() {
     }
   }
 
-  // 3. Fallback to default credentials
+  // 3. Fallback to default credentials (will fail Firestore reads without service account)
+  console.warn(
+    '[Firebase Admin] No service account found. Set FIREBASE_SERVICE_ACCOUNT_KEY env var or place the JSON file in project root. Firestore operations will fail.'
+  );
   return initializeApp({
     projectId: 'site-compiler',
   });

@@ -186,8 +186,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [job,      setJob]      = useState<JobState | null>(null);
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [tab,      setTab]      = useState<'preview' | 'logs'>('preview');
-  const logEndRef = useRef<HTMLDivElement>(null);
   const [savedToFirebase, setSavedToFirebase] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   // Restore job state on page load or refresh (from query param or localStorage)
   useEffect(() => {
@@ -208,6 +208,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             if (data.format) setFormat(data.format);
             if (data.status === 'completed' || data.status === 'failed') {
               setLoading(false);
+              if (data.status === 'completed') setSavedToFirebase(true);
             }
           } else {
             setLoading(false);
@@ -284,6 +285,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     setJob(null);
     setJobId(null);
     setTab('preview');
+    setSavedToFirebase(false);
     try {
       const res = await fetch(getApiUrl('/api/export'), {
         method: 'POST',
@@ -313,6 +315,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     setJob(null);
     setJobId(null);
     setLoading(false);
+    setSavedToFirebase(false);
     localStorage.removeItem('sitecompiler_active_job_id');
     if (typeof window !== 'undefined') {
       const newUrl = new URL(window.location.href);

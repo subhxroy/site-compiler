@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://sitecompiler.com";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://site-compiler.netlify.app";
 
 export const metadata: Metadata = {
   title: "SiteCompiler — AI Website Exporter & Code Generator",

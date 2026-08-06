@@ -5,22 +5,26 @@ import { productSchema, faqPageSchema, breadcrumbListSchema } from '@/lib/seo/sc
 
 export const metadata = buildMetadata({
   title: 'Pricing Plans — SiteCompiler',
-  description: 'Simple, transparent pricing for website compilation. Export Framer, Webflow, and static sites into clean Next.js 15 & React code.',
+  description: 'Simple, transparent pricing for website compilation. Export Framer, Webflow, and static sites into clean Next.js & React code.',
   path: '/pricing',
 });
 
 const pricingFaqs = [
   {
     question: 'Is there a free plan available?',
-    answer: 'Yes, the Hobby plan is completely free for individual projects with up to 15 subpages crawled per export.',
+    answer: 'Yes, the Free plan is completely free forever. It includes personal use, limited crawl depth, and community support — no credit card required.',
   },
   {
     question: 'Can I export sites to commercial projects?',
-    answer: 'Absolutely. All exported code, styles, and assets belong entirely to you with zero royalty or recurring SaaS fees.',
+    answer: 'Absolutely. All exported code, styles, and assets belong entirely to you with zero royalty or recurring platform lock-in.',
   },
   {
-    question: 'How many subpages can I export on Pro?',
-    answer: 'Pro tier supports up to 100 subpages per export job with batch queuing and priority Playwright rendering nodes.',
+    question: 'What does Pro include that Free does not?',
+    answer: 'Pro gives you unlimited crawl depth, all export formats (HTML, React, Next.js, Tailwind), priority support, and full API access for programmatic exports.',
+  },
+  {
+    question: 'What additional features come with Enterprise?',
+    answer: 'Enterprise includes everything in Pro plus team collaboration, custom integrations, dedicated support, and an SLA guarantee for mission-critical workloads.',
   },
 ];
 
@@ -38,7 +42,7 @@ export default function PricingPage() {
       <div className="max-w-[1100px] mx-auto px-6 space-y-16">
         <div className="text-center space-y-4 max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[6px] bg-[#1b1c1e] border border-[#2f3031] text-[11px] font-mono text-[#ff6363] uppercase tracking-wider">
-            Transparent Pricing
+            Pricing
           </div>
           <h1 className="text-4xl sm:text-5xl font-normal text-white">Simple pricing. Full ownership.</h1>
           <p className="text-base text-[#9c9c9d] leading-relaxed">
@@ -48,21 +52,20 @@ export default function PricingPage() {
 
         {/* Pricing Cards */}
         <div className="grid md:grid-cols-3 gap-6">
-          {/* Hobby */}
+          {/* Free */}
           <div className="raycast-key-card p-8 space-y-6 flex flex-col justify-between">
             <div className="space-y-4">
-              <div className="text-lg font-medium text-white">Hobby</div>
-              <div className="text-3xl font-bold text-white">$0 <span className="text-xs font-normal text-[#6a6b6c]">/ forever</span></div>
-              <p className="text-xs text-[#9c9c9d]">Perfect for testing SiteCompiler on small sites and single portfolios.</p>
+              <div className="text-lg font-medium text-white">Free</div>
+              <div className="text-3xl font-bold text-white">$0 <span className="text-xs font-normal text-[#6a6b6c]">/ month</span></div>
+              <p className="text-xs text-[#9c9c9d]">For personal use with limited crawl depth and community support.</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Up to 15 pages per export</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Static HTML, React, Next.js</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Universal Animation Shim v3.0</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Full Asset Local Bundler</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Personal use</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Limited crawl depth</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Community support</li>
               </ul>
             </div>
             <Link href="/#export-form" className="w-full py-3 text-center raycast-button-primary text-xs font-medium block">
-              Start Free Export
+              Get Started
             </Link>
           </div>
 
@@ -70,19 +73,18 @@ export default function PricingPage() {
           <div className="raycast-key-card p-8 space-y-6 flex flex-col justify-between border-[#ff6363]/50 relative shadow-[0_0_30px_rgba(255,99,99,0.15)]">
             <span className="absolute -top-3 right-6 text-[10px] font-mono px-2.5 py-0.5 rounded-[6px] bg-[#ff6363] text-black font-semibold uppercase">Popular</span>
             <div className="space-y-4">
-              <div className="text-lg font-medium text-white">Pro Pass</div>
-              <div className="text-3xl font-bold text-white">$29 <span className="text-xs font-normal text-[#6a6b6c]">/ month</span></div>
-              <p className="text-xs text-[#9c9c9d]">For agencies, freelancers, and teams migrating client sites regularly.</p>
+              <div className="text-lg font-medium text-white">Pro</div>
+              <div className="text-3xl font-bold text-white">$12 <span className="text-xs font-normal text-[#6a6b6c]">/ month</span></div>
+              <p className="text-xs text-[#9c9c9d]">Unlimited crawl depth, all export formats, priority support, and API access.</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Up to 100 pages per export</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Priority Playwright Nodes</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Custom Tailwind Class Mapper</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> REST API Access</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Commercial Usage Rights</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Unlimited crawl depth</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> All export formats</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Priority support</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> API access</li>
               </ul>
             </div>
             <Link href="/#export-form" className="w-full py-3 text-center raycast-button-primary text-xs font-medium block bg-[#ff6363] text-black hover:bg-[#ff7575]">
-              Get Pro Access
+              Get Pro
             </Link>
           </div>
 
@@ -90,13 +92,14 @@ export default function PricingPage() {
           <div className="raycast-key-card p-8 space-y-6 flex flex-col justify-between">
             <div className="space-y-4">
               <div className="text-lg font-medium text-white">Enterprise</div>
-              <div className="text-3xl font-bold text-white">Custom</div>
-              <p className="text-xs text-[#9c9c9d]">Dedicated compilation clusters for high-volume platform migrations.</p>
+              <div className="text-3xl font-bold text-white">$49 <span className="text-xs font-normal text-[#6a6b6c]">/ month</span></div>
+              <p className="text-xs text-[#9c9c9d]">Everything in Pro, plus team collaboration, custom integrations, and dedicated support.</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Unlimited page crawl depth</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Self-hosted Docker Compiler</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Custom AST Code Rules</li>
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> SLA & 24/7 Support</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Everything in Pro</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Team collaboration</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Custom integrations</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Dedicated support</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> SLA guarantee</li>
               </ul>
             </div>
             <Link href="/contact" className="w-full py-3 text-center raycast-key-card text-xs font-medium block border border-[#2f3031] text-white hover:border-white">

@@ -11,7 +11,7 @@
 [![Firebase](https://img.shields.io/badge/Firebase-11.0-FFCA28?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-[Demo](https://sitecompiler.com) · [Features](#-key-features) · [Quickstart](#-quickstart) · [Architecture](#-architecture) · [API Documentation](#-api-reference)
+[Demo](https://site-compiler.netlify.app) · [Features](#-key-features) · [Quickstart](#-quickstart) · [Architecture](#-architecture) · [API Documentation](#-api-reference)
 
 ---
 

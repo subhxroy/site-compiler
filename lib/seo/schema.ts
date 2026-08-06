@@ -1,4 +1,4 @@
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://sitecompiler.com';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://site-compiler.netlify.app';
 
 export function organizationSchema() {
   return {
@@ -9,7 +9,7 @@ export function organizationSchema() {
     url: SITE_URL,
     logo: `${SITE_URL}/icon-512.png`,
     sameAs: [
-      'https://github.com/subhxroy/sitecompiler',
+      'https://github.com/subhxroy/site-compiler',
       'https://twitter.com/subhroy',
       'https://linkedin.com/in/subhankarroy',
     ],
