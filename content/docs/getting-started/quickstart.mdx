@@ -1,0 +1,48 @@
+---
+title: "Quickstart Guide"
+description: "Start compiling websites into clean code in less than 2 minutes."
+category: "getting-started"
+order: 2
+updatedAt: "2026-08-05"
+---
+
+# Quickstart Guide
+
+Getting started with SiteCompiler takes under two minutes. Follow this step-by-step guide to run your first website compilation.
+
+---
+
+## Step 1: Submit Target URL
+
+Navigate to the SiteCompiler dashboard or homepage input field:
+1. Enter your target URL (e.g., `https://your-site.framer.website` or `https://your-site.webflow.io`).
+2. Select your desired output format:
+   - **Static HTML** (Fastest compilation)
+   - **React TSX** (Modular React components)
+   - **Next.js 15** (App Router + Tailwind CSS)
+
+---
+
+## Step 2: Monitor Real-Time Compilation Logs
+
+SiteCompiler launches a headless browser node that logs execution steps in real time:
+- Phase 1: Launching Playwright & executing multi-pass scroll hydration
+- Phase 2: Processing asset pipeline (fetching images, WOFF2 fonts, SVG icons)
+- Phase 3: Parsing CSS AST & removing redundant rules
+- Phase 4: Generating code architecture
+- Phase 5: Packaging ZIP archive with README
+
+---
+
+## Step 3: Download & Deploy
+
+Click **Download ZIP** to receive your archive. Unzip the file and run locally:
+
+```bash
+# For Static HTML:
+npx serve .
+
+# For Next.js 15 / React:
+npm install
+npm run dev
+```

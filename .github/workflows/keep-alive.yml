@@ -1,0 +1,31 @@
+name: Render Backend 24/7 Keep-Alive Pinger
+
+on:
+  schedule:
+    # Trigger every 5 minutes to prevent Render free instance from becoming inactive
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  ping-render-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend Health Router
+        env:
+          RENDER_URL: ${{ secrets.RENDER_BACKEND_URL }}
+        run: |
+          TARGET_URL="${RENDER_URL:-https://sitecompiler-backend.onrender.com}/health"
+          echo "Pinging Render Health Endpoint: $TARGET_URL at $(date -u)"
+          
+          # Send GET request with 15s timeout
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$TARGET_URL" || echo "000")
+          
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "SUCCESS: Render Health Router responded with HTTP 200 OK. Backend is ACTIVE."
+          else
+            echo "WARNING: Received HTTP status $RESPONSE from $TARGET_URL"
+            # Retry once after 5 seconds delay
+            sleep 5
+            RETRY_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$TARGET_URL" || echo "000")
+            echo "Retry response code: $RETRY_CODE"
+          fi

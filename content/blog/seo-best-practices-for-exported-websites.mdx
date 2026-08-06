@@ -1,0 +1,51 @@
+---
+title: "Technical SEO Checklist for Exported Websites: Sitemaps, JSON-LD, & Core Web Vitals"
+slug: "seo-best-practices-for-exported-websites"
+description: "Ensure your compiled websites maintain top search engine rankings with segmented sitemaps, structured JSON-LD schemas, and perfect 100/100 Lighthouse scores."
+publishedAt: "2026-08-04"
+updatedAt: "2026-08-06"
+category: "seo"
+author: "Subhankar Roy"
+coverImage: "/blog/seo-best-practices.png"
+---
+
+# Technical SEO Checklist for Exported Websites
+
+When compiling a published website into static HTML or Next.js, search engine optimization must be treated as a first-class citizen. Losing canonical URLs, structured schema data, or meta descriptions can drop search visibility.
+
+Here is the technical SEO checklist implemented automatically by SiteCompiler for every exported project.
+
+---
+
+## 1. Segmented XML Sitemaps
+
+Instead of a single monolithic `sitemap.xml`, high-performance sites use a segmented sitemap index:
+- `sitemap-pages.xml`
+- `sitemap-blog.xml`
+- `sitemap-docs.xml`
+- `sitemap-images.xml`
+- `sitemap-videos.xml`
+
+This structure allows search engines like Google and Bing to crawl specific section updates faster.
+
+---
+
+## 2. Dynamic OpenGraph & Meta Tag Sanitization
+
+Every page must contain unique `<title>` and `<meta description>` tags alongside self-referencing canonical links:
+
+```html
+<link rel="canonical" href="https://sitecompiler.com/blog/seo-best-practices-for-exported-websites" />
+<meta property="og:title" content="Technical SEO Checklist for Exported Websites" />
+```
+
+---
+
+## 3. Structured Data (JSON-LD)
+
+JSON-LD schemas help search engines display rich snippets:
+- `Organization` & `Person` schemas on main landing pages
+- `Article` & `BreadcrumbList` schemas on blog articles
+- `SoftwareApplication` & `FAQPage` schemas on product pages
+
+By bundling clean HTML with automated schema generation, compiled sites achieve 100/100 scores across Lighthouse Performance, SEO, Best Practices, and Accessibility.

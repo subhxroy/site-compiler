@@ -1,0 +1,48 @@
+---
+title: "Webflow to React: Converting Hashed CSS into Semantic Tailwind CSS"
+slug: "webflow-to-react-clean-code"
+description: "Learn how SiteCompiler parses Webflow DOM trees, maps utility classes into semantic Tailwind CSS tokens, and outputs clean React components."
+publishedAt: "2026-08-03"
+updatedAt: "2026-08-05"
+category: "webflow"
+author: "Subhankar Roy"
+coverImage: "/blog/webflow-to-react.png"
+---
+
+# Webflow to React: Converting Hashed CSS into Semantic Tailwind CSS
+
+Webflow provides great design flexibility, but exported Webflow code often contains deeply nested div wrappers (`.w-container`, `.w-row`, `.w-col`) and generated class names.
+
+When migrating to modern React or Next.js codebases, developers spend hours refactoring these structures into semantic Tailwind CSS utility classes.
+
+---
+
+## Semantic Token Mapping
+
+SiteCompiler's AST parser analyzes the computed styles of each Webflow element and converts repetitive styling blocks into clean Tailwind utility classes.
+
+### Webflow CSS Output
+```css
+.hero-heading {
+  font-family: Inter, sans-serif;
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #ffffff;
+}
+```
+
+### SiteCompiler Output
+```tsx
+<h1 className="font-sans text-5xl font-bold leading-tight text-white">
+  Your Headline Here
+</h1>
+```
+
+---
+
+## Preserving Webflow Interactions
+
+Webflow interactions rely on `ix2` engine scripts (`[data-w-id]`). SiteCompiler replaces runtime dependency heavy scripts with lightweight IntersectionObserver triggers and CSS transitions.
+
+This reduces page payload size while maintaining smooth scroll triggers and hover animations.

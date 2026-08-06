@@ -1,0 +1,68 @@
+---
+title: "Export API Reference"
+description: "Programmatically trigger website compilation via HTTP REST API."
+category: "api"
+order: 3
+updatedAt: "2026-08-05"
+---
+
+# Export API Reference
+
+SiteCompiler provides an HTTP API endpoint to trigger website compilation programmatically.
+
+---
+
+## Endpoint: `POST /api/export`
+
+Triggers an asynchronous export job for a given URL.
+
+### Request Headers
+```http
+Content-Type: application/json
+```
+
+### Request Body
+```json
+{
+  "url": "https://subhxroy.framer.website",
+  "format": "html"
+}
+```
+
+#### Parameters
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `url` | `string` | Yes | Valid target website URL (`http` or `https`) |
+| `format` | `string` | No | Output format: `"html"`, `"react"`, or `"nextjs"` (Default: `"nextjs"`) |
+
+---
+
+### Response `200 OK`
+```json
+{
+  "jobId": "job_1786010269612_zpru8",
+  "status": "pending"
+}
+```
+
+---
+
+## Endpoint: `GET /api/job/:jobId/status`
+
+Poll job progress, execution logs, and retrieve the download URL.
+
+### Response `200 OK`
+```json
+{
+  "id": "job_1786010269612_zpru8",
+  "status": "completed",
+  "progressMessage": "Export complete — 7061 KB ZIP ready for download.",
+  "zipSizeKb": 7061,
+  "downloadUrl": "/api/job/job_1786010269612_zpru8/download",
+  "screenshots": {
+    "desktop": "/api/job/job_1786010269612_zpru8/screenshot?type=desktop",
+    "tablet": "/api/job/job_1786010269612_zpru8/screenshot?type=tablet",
+    "mobile": "/api/job/job_1786010269612_zpru8/screenshot?type=mobile"
+  }
+}
+```

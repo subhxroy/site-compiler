@@ -1,0 +1,19 @@
+# Render Blueprint Specification
+# Deploys the SiteCompiler backend service to Render free-tier with Playwright dependencies and health router
+services:
+  - type: web
+    name: sitecompiler-backend
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npx playwright install chromium --with-deps
+    startCommand: npm run start:backend
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        sync: false # Set in Render dashboard to your Netlify URL (e.g. https://your-app.netlify.app)

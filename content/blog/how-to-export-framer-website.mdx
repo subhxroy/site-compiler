@@ -1,0 +1,64 @@
+---
+title: "How to Export a Framer Website to Clean React & Next.js Code"
+slug: "how-to-export-framer-website"
+description: "A complete step-by-step guide on crawling published Framer websites, capturing post-hydration DOM, preserving animations, and downloading clean React TSX."
+publishedAt: "2026-08-01"
+updatedAt: "2026-08-05"
+category: "framer"
+author: "Subhankar Roy"
+coverImage: "/blog/framer-export-guide.png"
+---
+
+# How to Export a Framer Website to Clean React & Next.js Code
+
+Framer is one of the most visual and fluid website builders available today. However, lock-in can become an issue when you want to migrate your site to a custom Next.js 15 stack, add complex backend logic, or host on your own infrastructure.
+
+In this article, we'll walk through how **SiteCompiler** captures published Framer sites, preserves their motion curves, and converts them into production-ready React TSX and Tailwind CSS.
+
+---
+
+## The Challenge with Standard HTML Scrapers
+
+Standard web scrapers hit published Framer websites and encounter two main obstacles:
+
+1. **Hidden Initial States**: Framer Motion components often start with `opacity: 0` or `transform: translateY(20px)`. A static HTML scrape captures these initial hidden states, leaving you with a blank page.
+2. **Missing Script Preloads**: Framer relies on ES Module preloads (`script_main.mjs`) for interactive components like rolling text hovers, mobile menus, and sticky parallax headers.
+
+---
+
+## Step 1: Post-Hydration DOM Capture
+
+SiteCompiler uses a multi-pass Playwright crawler. It performs a initial scroll down the page to trigger lazy-loaded images, execute `IntersectionObserver` thresholds, and hydrate Framer Motion states before taking a DOM snapshot.
+
+```ts
+// Playwright scroll hydration snippet
+await page.evaluate(async () => {
+  const getH = () => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+  for (let y = 0; y < getH(); y += 200) {
+    window.scrollTo({ top: y, behavior: 'instant' });
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  window.scrollTo(0, 0);
+});
+```
+
+---
+
+## Step 2: Extracting Assets & Bundling CSS
+
+All images, SVG icons, embedded MP4 videos, and custom Web Fonts (such as Archivo, Inter, or custom WOFF2 files) are downloaded locally into a clean folder structure.
+
+Class names like `.framer-14q8xyt-container` are preserved alongside a surgical critical CSS override sheet that restores fixed positioning for pill navbars and sticky headers.
+
+---
+
+## Step 3: Downloading Your Clean ZIP Archive
+
+When compilation finishes, you get a single ZIP containing:
+- `index.html` (or React TSX / Next.js App Router structure)
+- `styles.css` (consolidated clean CSS rules)
+- `script.js` (lightweight universal animation shim)
+- `assets/` (images, fonts, icons)
+- `README.md` (deployment guide for Vercel, Netlify, Cloudflare Pages, and local preview)
+
+Try compiling your site now using the SiteCompiler engine!

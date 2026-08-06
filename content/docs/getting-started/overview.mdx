@@ -1,0 +1,46 @@
+---
+title: "Platform Overview"
+description: "Learn how SiteCompiler crawls, compiles, and converts published websites into clean code."
+category: "getting-started"
+order: 1
+updatedAt: "2026-08-05"
+---
+
+# SiteCompiler Platform Overview
+
+SiteCompiler is an AI-powered website compilation platform. It takes any published website URL (Framer, Webflow, Wix, Squarespace, Shopify, or static HTML) and converts it into clean, editable source code in your choice of architecture:
+
+1. **Static HTML / CSS / JS**: Fully hydrated static bundle ready for drag-and-drop hosting on Netlify, Vercel, or traditional cPanel FTP servers.
+2. **React TSX**: Modular React component tree with TypeScript definitions and styling modules.
+3. **Next.js 15 App Router + Tailwind CSS**: Complete Next.js 15 project structure with App Router pages, Tailwind config, and zero framework lock-in.
+
+---
+
+## Core Engine Architecture
+
+```
+[ Target Website URL ]
+         │
+         ▼
+ 1. Multi-pass Playwright Crawler (Post-Hydration DOM Capture)
+         │
+         ▼
+ 2. Asset Pipeline (Images, Fonts, Videos, Favicons fetched locally)
+         │
+         ▼
+ 3. CSS Parser & AST Consolidation (Duplicate style removal)
+         │
+         ▼
+ 4. Universal Animation Shim v3.0 (Restores scroll reveal, hovers, sticky nav)
+         │
+         ▼
+ 5. ZIP Packaging + README (Instant Deployment Ready)
+```
+
+---
+
+## Key Benefits
+
+- **Zero Lock-in**: Move your site off closed SaaS platforms into open source stacks.
+- **Offline Self-Hosting**: Every single asset, script, and font is saved locally into the ZIP.
+- **Fast Local Preview**: Open index.html or run `npm run dev` instantly.
