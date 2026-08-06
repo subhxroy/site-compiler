@@ -2,7 +2,7 @@
  * Utility for resolving backend API URLs.
  * When deployed on Netlify (Frontend) with Render (Backend), process.env.NEXT_PUBLIC_API_URL
  * or process.env.BACKEND_URL points to the Render service origin (e.g., https://sitecompiler-backend.onrender.com).
- * If undefined, it falls back to relative paths for local full-stack execution.
+ * If undefined or running on localhost, it falls back to relative paths for local full-stack execution.
  */
 
 export const API_BASE_URL = (
@@ -17,7 +17,13 @@ export function getApiUrl(path: string): string {
     return path;
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `${API_BASE_URL}${cleanPath}`;
+
+  // On localhost, always use relative paths so exports run 100% locally
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return cleanPath;
+  }
+
+  return API_BASE_URL ? `${API_BASE_URL}${cleanPath}` : cleanPath;
 }
 
 export function isServerlessEnvironment(): boolean {
