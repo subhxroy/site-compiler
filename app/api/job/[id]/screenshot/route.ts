@@ -32,16 +32,11 @@ export async function GET(
     }
   }
 
-  const screenshotPath = path.resolve(
-    process.cwd(),
-    'exports',
-    id,
-    'raw',
-    'screenshots',
-    `${type}.png`
-  );
+  const p1 = path.resolve(process.cwd(), 'exports', id, 'raw', 'screenshots', `${type}.png`);
+  const p2 = path.resolve(process.cwd(), 'exports', id, 'screenshots', `${type}.png`);
+  const screenshotPath = fs.existsSync(p1) ? p1 : fs.existsSync(p2) ? p2 : null;
 
-  if (!fs.existsSync(screenshotPath)) {
+  if (!screenshotPath) {
     return NextResponse.json({ error: 'Screenshot not found' }, { status: 404 });
   }
 

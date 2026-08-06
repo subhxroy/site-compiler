@@ -13,8 +13,8 @@ const PORT = process.env.PORT || 3001;
 
 // CORS configuration - Allow Netlify frontend domain or fallback to all origins
 const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'https://site-compiler.netlify.app', 'http://localhost:3000', 'http://localhost:8888']
-  : ['https://site-compiler.netlify.app', 'http://localhost:3000', 'http://localhost:8888'];
+  ? [process.env.FRONTEND_URL, 'https://site-compiler.netlify.app', 'https://sitecompiler-app.netlify.app', 'http://localhost:3000', 'http://localhost:8888']
+  : ['https://site-compiler.netlify.app', 'https://sitecompiler-app.netlify.app', 'http://localhost:3000', 'http://localhost:8888'];
 
 app.use(
   cors({
@@ -28,7 +28,6 @@ app.use(
 app.use(express.json());
 
 // ── Render Health Router Endpoint ─────────────────────────────────────────────
-// Render web service health check & 24/7 keep-alive pinger endpoint
 const healthHandler = (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.status(200).json({
@@ -98,9 +97,11 @@ app.get('/api/job/:id/download', (req: Request, res: Response) => {
   }
 
   const exportDir = path.join(process.cwd(), 'exports', id);
-  const zipPath = path.join(exportDir, `${id}.zip`);
+  const zipPath1 = path.join(exportDir, `${id}.zip`);
+  const zipPath2 = path.join(exportDir, `download.zip`);
+  const zipPath = fs.existsSync(zipPath1) ? zipPath1 : fs.existsSync(zipPath2) ? zipPath2 : null;
 
-  if (!fs.existsSync(zipPath)) {
+  if (!zipPath) {
     res.status(404).json({ error: 'ZIP file not found' });
     return;
   }
@@ -122,15 +123,11 @@ app.get('/api/job/:id/screenshot', (req: Request, res: Response) => {
     return;
   }
 
-  const screenshotPath = path.join(
-    process.cwd(),
-    'exports',
-    id,
-    'screenshots',
-    `${viewport}.png`
-  );
+  const p1 = path.join(process.cwd(), 'exports', id, 'raw', 'screenshots', `${viewport}.png`);
+  const p2 = path.join(process.cwd(), 'exports', id, 'screenshots', `${viewport}.png`);
+  const screenshotPath = fs.existsSync(p1) ? p1 : fs.existsSync(p2) ? p2 : null;
 
-  if (!fs.existsSync(screenshotPath)) {
+  if (!screenshotPath) {
     res.status(404).json({ error: 'Screenshot not found' });
     return;
   }

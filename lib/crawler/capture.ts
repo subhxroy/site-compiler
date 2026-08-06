@@ -79,7 +79,6 @@ function guessExtension(urlStr: string, contentType?: string): string {
 
 function findPlaywrightChromium(): string | undefined {
   const basePaths = [
-    // pw-browsers is installed into the project dir during Render build — only path that persists
     path.join(process.cwd(), 'pw-browsers'),
     process.env.PLAYWRIGHT_BROWSERS_PATH,
     '/opt/render/.cache/ms-playwright',
@@ -112,7 +111,8 @@ function findPlaywrightChromium(): string | undefined {
 // ── Multi-page crawler ────────────────────────────────────────────────────────
 
 export async function captureSite(options: CaptureOptions): Promise<CaptureResult> {
-  const { jobId, url, maxPages = 15, onProgress } = options;
+  // Default maxPages set to 1000 for unlimited full-site crawling
+  const { jobId, url, maxPages = 1000, onProgress } = options;
 
   const normalizedEntryUrl = normalizeUrl(url);
   const entryUrlParsed = new URL(normalizedEntryUrl);
@@ -123,7 +123,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     if (onProgress) onProgress(msg);
   };
 
-  log(`Starting multi-page capture for: ${normalizedEntryUrl} (max ${maxPages} pages)`);
+  log(`Starting full-site capture for: ${normalizedEntryUrl}`);
 
   // ── Directory setup ─────────────────────────────────────────────────────
   const exportsDir  = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'exports', jobId);
@@ -137,8 +137,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const iconsDir    = path.join(/* turbopackIgnore: true */ assetsDir, 'icons');
   const videoDir    = path.join(/* turbopackIgnore: true */ assetsDir, 'video');
   const screensDir  = path.join(/* turbopackIgnore: true */ rawDir, 'screenshots');
+  const screensExportDir = path.join(/* turbopackIgnore: true */ exportsDir, 'screenshots');
 
-  for (const d of [exportsDir, rawDir, pagesRawDir, stylesDir, scriptsDir, assetsDir, imagesDir, fontsDir, iconsDir, videoDir, screensDir]) {
+  for (const d of [exportsDir, rawDir, pagesRawDir, stylesDir, scriptsDir, assetsDir, imagesDir, fontsDir, iconsDir, videoDir, screensDir, screensExportDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
 
@@ -222,16 +223,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       pageCount++;
 
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
-      log(`Crawling page ${pageCount}/${maxPages}: ${currentUrl}`);
+      log(`Crawling page ${pageCount}: ${currentUrl}`);
 
       try {
-        // Enforce 15-second strict per-page navigation timeout
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         
-        // Fast wait for async network chunks without hanging on open sockets
         try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
 
-        // ── Dismiss cookie/GDPR banners ──────────────────────────────────
+        // Dismiss cookie/GDPR banners
         const cookieDismissSelectors = [
           'button[id*="accept"]', 'button[class*="accept"]',
           'button[id*="cookie"]', 'button[class*="cookie"]',
@@ -252,7 +251,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           } catch {}
         }
 
-        // ── Capped Fast Scroll to trigger lazy loading & React hydration ────
+        // Capped Fast Scroll to trigger lazy loading & React hydration
         await page.evaluate(async () => {
           const maxScroll = Math.min(
             Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
@@ -371,14 +370,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         domAssets.forEach((u) => allDiscoveredAssetUrls.add(u));
 
-        // Take screenshots on entry page with 4s timeout per viewport
+        // Take screenshots on entry page and save to both directory targets
         if (isEntry) {
           log('Taking viewport screenshots of main page...');
-          const screenshotPaths = {
-            desktop: path.join(screensDir, 'desktop.png'),
-            tablet:  path.join(screensDir, 'tablet.png'),
-            mobile:  path.join(screensDir, 'mobile.png'),
-          };
           for (const [name, size] of [
             ['desktop', { width: 1440, height: 900 }],
             ['tablet',  { width: 768,  height: 1024 }],
@@ -387,11 +381,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             try {
               await page.setViewportSize(size);
               await page.waitForTimeout(150);
+              const p1 = path.join(screensDir, `${name}.png`);
+              const p2 = path.join(screensExportDir, `${name}.png`);
               await page.screenshot({
-                path: screenshotPaths[name as keyof typeof screenshotPaths],
+                path: p1,
                 fullPage: false,
                 timeout: 4000,
               });
+              try { fs.copyFileSync(p1, p2); } catch {}
             } catch {
               log(`Warning: Screenshot ${name} timed out, skipping...`);
             }
@@ -448,14 +445,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       }
     }
 
-    // ── Download all assets with strict timeouts ───────────────────────────
+    // ── Download all assets ─────────────────────────────────────────────
     const mergedAssetUrls = [
       ...new Set([
         ...allDiscoveredAssetUrls,
         ...cssAssetUrls,
         ...networkAssetUrls,
       ]),
-    ].filter((u) => u.startsWith('http://') || u.startsWith('https://')).slice(0, 150); // Cap max assets to 150
+    ].filter((u) => u.startsWith('http://') || u.startsWith('https://'));
 
     log(`Downloading ${mergedAssetUrls.length} total assets...`);
 
