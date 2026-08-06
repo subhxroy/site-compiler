@@ -8,11 +8,3 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Optional proxy redirect rule: automatically forwards /api/* calls from Netlify to Render backend
-[[redirects]]
-  from = "/api/*"
-  to = ":NEXT_PUBLIC_API_URL/api/:splat"
-  status = 200
-  force = true
-  conditions = {Role = ["*"]}
