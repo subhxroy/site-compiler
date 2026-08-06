@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { isFirebaseConfigured } from '@/lib/firebase/config';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -12,6 +13,9 @@ function getReadableErrorMessage(err: any): string {
   const code = err?.code || '';
   const msg = err?.message || String(err);
 
+  if (code.includes('auth/api-key-not-valid') || msg.includes('api-key-not-valid') || msg.includes('API key')) {
+    return 'Firebase API key is not configured in Netlify environment variables. Please set NEXT_PUBLIC_FIREBASE_API_KEY in your Netlify site settings.';
+  }
   if (code.includes('auth/invalid-credential') || code.includes('auth/user-not-found')) {
     return 'Account not found or password incorrect. If you are new, click "Sign up" below to create an account.';
   }
@@ -44,6 +48,10 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
+    if (!isFirebaseConfigured) {
+      setError('Firebase Web Auth credentials are not set on Netlify. Add NEXT_PUBLIC_FIREBASE_API_KEY to your environment variables.');
+      return;
+    }
     try {
       setError(null);
       setLoading(true);
@@ -59,6 +67,10 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
+    if (!isFirebaseConfigured) {
+      setError('Firebase Web Auth credentials are not set on Netlify. Add NEXT_PUBLIC_FIREBASE_API_KEY to your environment variables.');
+      return;
+    }
     try {
       setError(null);
       setLoading(true);
@@ -106,7 +118,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         </div>
 
         {error && (
-          <div className="p-3 text-xs bg-red-500/15 border border-red-500/30 text-red-400 rounded-[8px] text-center">
+          <div className="p-3 text-xs bg-red-500/15 border border-red-500/30 text-red-400 rounded-[8px] text-center leading-relaxed">
             {error}
           </div>
         )}
