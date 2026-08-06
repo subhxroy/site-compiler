@@ -1,7 +1,6 @@
 import { chromium } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
 
@@ -113,7 +112,7 @@ function findPlaywrightChromium(): string | undefined {
 // ── Multi-page crawler ────────────────────────────────────────────────────────
 
 export async function captureSite(options: CaptureOptions): Promise<CaptureResult> {
-  const { jobId, url, maxPages = 15, debug = false, onProgress } = options;
+  const { jobId, url, maxPages = 15, onProgress } = options;
 
   const normalizedEntryUrl = normalizeUrl(url);
   const entryUrlParsed = new URL(normalizedEntryUrl);
@@ -187,6 +186,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     ignoreHTTPSErrors: true,
     javaScriptEnabled: true,
   });
+
   // Spoof navigator properties to avoid bot detection
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -225,11 +225,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       log(`Crawling page ${pageCount}/${maxPages}: ${currentUrl}`);
 
       try {
-        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        // Wait for network to settle (Framer loads chunks asynchronously)
-        try { await page.waitForLoadState('networkidle', { timeout: 2500 }); } catch {}
+        // Enforce 15-second strict per-page navigation timeout
+        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        
+        // Fast wait for async network chunks without hanging on open sockets
+        try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
 
-        // ── Dismiss cookie/GDPR banners before scrolling ──────────────────
+        // ── Dismiss cookie/GDPR banners ──────────────────────────────────
         const cookieDismissSelectors = [
           'button[id*="accept"]', 'button[class*="accept"]',
           'button[id*="cookie"]', 'button[class*="cookie"]',
@@ -242,41 +244,29 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         for (const sel of cookieDismissSelectors) {
           try {
             const btn = page.locator(sel).first();
-            if (await btn.isVisible({ timeout: 800 })) {
-              await btn.click({ timeout: 800 });
-              await page.waitForTimeout(300);
+            if (await btn.isVisible({ timeout: 500 })) {
+              await btn.click({ timeout: 500 });
+              await page.waitForTimeout(200);
               break;
             }
           } catch {}
         }
 
-        // ── Multi-pass scroll to fully hydrate React/Framer components ────
+        // ── Capped Fast Scroll to trigger lazy loading & React hydration ────
         await page.evaluate(async () => {
-          const getH = () => Math.max(
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight
+          const maxScroll = Math.min(
+            Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+            4000
           );
-          // First pass: fast scroll to trigger lazy images & React hydration
-          for (let y = 0; y < getH(); y += 400) {
+          for (let y = 0; y < maxScroll; y += 500) {
             window.scrollTo({ top: y, behavior: 'instant' });
-            await new Promise((r) => setTimeout(r, 80));
+            await new Promise((r) => setTimeout(r, 40));
           }
-          await new Promise((r) => setTimeout(r, 600));
-          // Second pass: slower scroll to trigger IntersectionObserver thresholds
           window.scrollTo(0, 0);
-          await new Promise((r) => setTimeout(r, 200));
-          for (let y = 0; y < getH(); y += 200) {
-            window.scrollTo({ top: y, behavior: 'instant' });
-            await new Promise((r) => setTimeout(r, 50));
-          }
-          await new Promise((r) => setTimeout(r, 800));
-          // Return to top so captured HTML reflects scroll-position: 0
-          window.scrollTo(0, 0);
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 150));
         });
 
-        // Extra wait for React state reconciliation & dynamic content
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(400);
 
         // Extract internal links for subpage crawling
         const internalLinks: string[] = await page.evaluate((targetHost) => {
@@ -298,7 +288,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           return [...links];
         }, targetHost);
 
-        log(`Discovered ${internalLinks.length} internal links on ${currentUrl}: ${JSON.stringify(internalLinks)}`);
+        log(`Discovered ${internalLinks.length} internal links on ${currentUrl}`);
 
         for (const rawLink of internalLinks) {
           const link = normalizeUrl(rawLink);
@@ -381,7 +371,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         domAssets.forEach((u) => allDiscoveredAssetUrls.add(u));
 
-        // Take screenshots on entry page
+        // Take screenshots on entry page with 4s timeout per viewport
         if (isEntry) {
           log('Taking viewport screenshots of main page...');
           const screenshotPaths = {
@@ -394,16 +384,21 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             ['tablet',  { width: 768,  height: 1024 }],
             ['mobile',  { width: 390,  height: 844  }],
           ] as const) {
-            await page.setViewportSize(size);
-            await page.waitForTimeout(200);
-            await page.screenshot({
-              path: screenshotPaths[name as keyof typeof screenshotPaths],
-              fullPage: true,
-            });
+            try {
+              await page.setViewportSize(size);
+              await page.waitForTimeout(150);
+              await page.screenshot({
+                path: screenshotPaths[name as keyof typeof screenshotPaths],
+                fullPage: false,
+                timeout: 4000,
+              });
+            } catch {
+              log(`Warning: Screenshot ${name} timed out, skipping...`);
+            }
           }
         }
       } catch (err) {
-        log(`Warning: Failed to crawl page ${currentUrl}: ${err}`);
+        log(`Warning: Page crawl timeout or error for ${currentUrl}: ${err}`);
       }
     }
 
@@ -431,7 +426,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         cssPaths.push(p);
       } else if (s.type === 'link' && s.href) {
         try {
-          const res = await context.request.get(s.href, { timeout: 15000 });
+          const res = await context.request.get(s.href, { timeout: 8000 });
           if (res.ok()) {
             const p = path.join(stylesDir, `style_${styleIdx++}.css`);
             fs.writeFileSync(p, await res.text(), 'utf-8');
@@ -453,14 +448,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       }
     }
 
-    // ── Download all assets ────────────────────────────────────────────────
+    // ── Download all assets with strict timeouts ───────────────────────────
     const mergedAssetUrls = [
       ...new Set([
         ...allDiscoveredAssetUrls,
         ...cssAssetUrls,
         ...networkAssetUrls,
       ]),
-    ].filter((u) => u.startsWith('http://') || u.startsWith('https://'));
+    ].filter((u) => u.startsWith('http://') || u.startsWith('https://')).slice(0, 150); // Cap max assets to 150
 
     log(`Downloading ${mergedAssetUrls.length} total assets...`);
 
@@ -469,7 +464,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
     for (const assetUrl of mergedAssetUrls) {
       try {
-        const res = await context.request.get(assetUrl, { timeout: 15000 });
+        const res = await context.request.get(assetUrl, { timeout: 6000 });
         if (!res.ok()) continue;
 
         const ct = res.headers()['content-type'] || '';
@@ -513,6 +508,6 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       meta: primaryMeta,
     };
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
 }

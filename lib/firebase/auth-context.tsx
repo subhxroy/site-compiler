@@ -10,7 +10,6 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import { auth, googleProvider } from './config';
-import { getApiUrl } from '../api-config';
 
 export interface UserExportRecord {
   id?: string;
@@ -55,9 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
 
       if (currentUser) {
-        // Sync user profile to Firestore via server API (Admin SDK)
+        // Sync user profile to Next.js API route (/api/user/sync)
         try {
-          await fetch(getApiUrl('/api/user/sync'), {
+          await fetch('/api/user/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -66,9 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
               photoURL: currentUser.photoURL || null,
             }),
-          });
-        } catch (err) {
-          console.error('[Firebase Sync] Profile sync error:', err);
+          }).catch(() => {});
+        } catch {
+          // Silently handle offline/network sync errors
         }
       }
     });
@@ -95,27 +94,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const saveUserExport = async (exportData: UserExportRecord) => {
     if (!user) return;
     try {
-      await fetch(getApiUrl('/api/user/exports'), {
+      await fetch('/api/user/exports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user.uid, ...exportData }),
-      });
-    } catch (err) {
-      console.error('[Firebase DB] Error saving user export history:', err);
+      }).catch(() => {});
+    } catch {
+      // Silently handle save export error
     }
   };
 
   const getUserExports = async (): Promise<UserExportRecord[]> => {
     if (!user) return [];
     try {
-      const res = await fetch(getApiUrl(`/api/user/exports?uid=${user.uid}`));
-      if (res.ok) {
+      const res = await fetch(`/api/user/exports?uid=${user.uid}`).catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.exports)) return data.exports;
       }
       return [];
-    } catch (err) {
-      console.error('[Firebase DB] Error fetching user exports:', err);
+    } catch {
       return [];
     }
   };
