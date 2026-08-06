@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 3001;
 
 // CORS configuration - Allow Netlify frontend domain or fallback to all origins
 const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:8888']
-  : '*';
+  ? [process.env.FRONTEND_URL, 'https://site-compiler.netlify.app', 'http://localhost:3000', 'http://localhost:8888']
+  : ['https://site-compiler.netlify.app', 'http://localhost:3000', 'http://localhost:8888'];
 
 app.use(
   cors({
