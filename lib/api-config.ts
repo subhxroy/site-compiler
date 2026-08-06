@@ -5,10 +5,16 @@
  * If running on localhost, it falls back to relative paths for 100% local execution.
  */
 
+// Resolution order:
+//   1. Explicit NEXT_PUBLIC_API_URL / BACKEND_URL override (optional)
+//   2. Local dev (next dev, NODE_ENV=development): '' so routes run the job
+//      processor in-process via dynamic import (uses local Playwright).
+//   3. Production (NODE_ENV=production): the Render backend origin, so the
+//      Netlify serverless functions always proxy — no dashboard env var needed.
 export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || 
-  process.env.BACKEND_URL || 
-  'https://site-compiler.onrender.com'
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.BACKEND_URL ||
+  (process.env.NODE_ENV === 'development' ? '' : 'https://site-compiler.onrender.com')
 ).replace(/\/$/, '');
 
 export function getApiUrl(path: string): string {
