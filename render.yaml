@@ -6,7 +6,7 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && npx playwright install chromium
+    buildCommand: npm install --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && npx playwright install
     startCommand: npm run start:backend
     healthCheckPath: /health
     autoDeploy: true

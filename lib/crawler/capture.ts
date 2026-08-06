@@ -106,10 +106,28 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   }
 
   // ── Launch browser ──────────────────────────────────────────────────────
-  const browser = await chromium.launch({
-    headless: !debug,
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
+  const containerArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--disable-gpu',
+    '--disable-blink-features=AutomationControlled',
+  ];
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: !debug,
+      args: containerArgs,
+    });
+  } catch (launchErr: any) {
+    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback launch...`);
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+  }
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     userAgent:
