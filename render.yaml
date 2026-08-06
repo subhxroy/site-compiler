@@ -6,7 +6,7 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install && npx playwright install chromium --with-deps
+    buildCommand: npm install && npx playwright install chromium
     startCommand: npm run start:backend
     healthCheckPath: /health
     autoDeploy: true
