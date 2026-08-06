@@ -78,6 +78,36 @@ function guessExtension(urlStr: string, contentType?: string): string {
   return ctMap[ct] || '.bin';
 }
 
+function findPlaywrightChromium(): string | undefined {
+  const basePaths = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    '/opt/render/.cache/ms-playwright',
+    path.join(process.cwd(), '.cache', 'ms-playwright'),
+    '/tmp/ms-playwright',
+  ].filter(Boolean) as string[];
+
+  for (const base of basePaths) {
+    if (!fs.existsSync(base)) continue;
+    try {
+      const dirs = fs.readdirSync(base);
+      for (const dir of dirs) {
+        if (dir.startsWith('chromium')) {
+          const candidates = [
+            path.join(base, dir, 'chrome-linux', 'chrome'),
+            path.join(base, dir, 'chrome-linux64', 'chrome'),
+            path.join(base, dir, 'chrome-headless-shell-linux64', 'chrome-headless-shell'),
+            path.join(base, dir, 'chrome-headless-shell-linux', 'chrome-headless-shell'),
+          ];
+          for (const cand of candidates) {
+            if (fs.existsSync(cand)) return cand;
+          }
+        }
+      }
+    } catch {}
+  }
+  return undefined;
+}
+
 // ── Multi-page crawler ────────────────────────────────────────────────────────
 
 export async function captureSite(options: CaptureOptions): Promise<CaptureResult> {
@@ -112,6 +142,11 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   }
 
   // ── Launch browser ──────────────────────────────────────────────────────
+  const execPath = findPlaywrightChromium();
+  if (execPath) {
+    log(`[Browser Engine] Located Playwright binary: ${execPath}`);
+  }
+
   const containerArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -125,12 +160,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   try {
     browser = await chromium.launch({
       headless: true,
+      ...(execPath && { executablePath: execPath }),
       args: containerArgs,
     });
   } catch (launchErr: any) {
-    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback launch...`);
+    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback...`);
     browser = await chromium.launch({
       headless: true,
+      ...(execPath && { executablePath: execPath }),
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
   }
