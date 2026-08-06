@@ -116,13 +116,13 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
    ```env
    NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
-   # Firebase Client Config (Optional - Defaults preconfigured for site-compiler)
-   NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyDNiWJk2XFi0Q5IKv_1QLlyoMeYI8k9EEs
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=site-compiler.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=site-compiler
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=site-compiler.firebasestorage.app
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=160987480027
-   NEXT_PUBLIC_FIREBASE_APP_ID=1:160987480027:web:079416ca098a8354fd31fe
+   # Firebase Client Config (Optional - get values from Firebase Console > Project Settings)
+   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key_here
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=000000000000
+   NEXT_PUBLIC_FIREBASE_APP_ID=1:000000000000:web:0000000000000000
    ```
 
 5. **Start Development Server**:
