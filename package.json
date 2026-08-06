@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "npx tsx server/index.ts",
     "start:backend": "npx tsx server/index.ts",
     "start:frontend": "next start",
     "keep-alive": "node scripts/keep-alive.js",
