@@ -1,5 +1,5 @@
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-  process.env.PLAYWRIGHT_BROWSERS_PATH = '/opt/render/.cache/ms-playwright';
+  process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
 
 import express, { Request, Response } from 'express';

@@ -6,7 +6,9 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=/opt/render/.cache/ms-playwright npx playwright install chromium
+    # Install browsers INTO the project dir (./pw-browsers) — the ONLY directory that
+    # survives between Render's build and runtime phases. /opt/render/.cache does NOT persist.
+    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers npx playwright install chromium
     startCommand: npm run start:backend
     healthCheckPath: /health
     autoDeploy: true
@@ -16,7 +18,7 @@ services:
       - key: NODE_VERSION
         value: 20.18.0
       - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /opt/render/.cache/ms-playwright
+        value: ./pw-browsers
       - key: PORT
         value: 10000
       - key: FRONTEND_URL

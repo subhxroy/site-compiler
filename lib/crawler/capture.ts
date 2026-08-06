@@ -5,9 +5,9 @@ import { execSync } from 'child_process';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
 
-// Ensure browser binary path is set
+// Set browser path to ./pw-browsers (project-relative, survives Render build→runtime)
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-  process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/ms-playwright';
+  process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,6 +80,8 @@ function guessExtension(urlStr: string, contentType?: string): string {
 
 function findPlaywrightChromium(): string | undefined {
   const basePaths = [
+    // pw-browsers is installed into the project dir during Render build — only path that persists
+    path.join(process.cwd(), 'pw-browsers'),
     process.env.PLAYWRIGHT_BROWSERS_PATH,
     '/opt/render/.cache/ms-playwright',
     path.join(process.cwd(), '.cache', 'ms-playwright'),
