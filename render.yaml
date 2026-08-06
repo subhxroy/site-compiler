@@ -6,7 +6,7 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright install chromium
+    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=/opt/render/.cache/ms-playwright npx playwright install chromium
     startCommand: npm run start:backend
     healthCheckPath: /health
     autoDeploy: true
@@ -16,7 +16,7 @@ services:
       - key: NODE_VERSION
         value: 20.18.0
       - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /tmp/ms-playwright
+        value: /opt/render/.cache/ms-playwright
       - key: PORT
         value: 10000
       - key: FRONTEND_URL

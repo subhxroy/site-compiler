@@ -124,26 +124,11 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   let browser;
   try {
     browser = await chromium.launch({
-      headless: !debug,
+      headless: true,
       args: containerArgs,
     });
   } catch (launchErr: any) {
-    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting auto-installation fallback...`);
-    
-    // Auto-install Playwright chromium if binary is missing on cloud host
-    if (launchErr.message?.includes("Executable doesn't exist") || launchErr.message?.includes("Please run the following command")) {
-      try {
-        log('[Playwright Auto-Installer] Executing npx playwright install chromium into /tmp/ms-playwright...');
-        execSync('npx playwright install chromium', {
-          stdio: 'inherit',
-          env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/tmp/ms-playwright' },
-        });
-        log('[Playwright Auto-Installer] Chromium installed! Launching browser...');
-      } catch (cmdErr: any) {
-        log(`[Playwright Auto-Installer Warning] Command failed: ${cmdErr.message}`);
-      }
-    }
-
+    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback launch...`);
     browser = await chromium.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
@@ -201,9 +186,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       log(`Crawling page ${pageCount}/${maxPages}: ${currentUrl}`);
 
       try {
-        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
+        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
         // Wait for network to settle (Framer loads chunks asynchronously)
-        try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch {}
+        try { await page.waitForLoadState('networkidle', { timeout: 2500 }); } catch {}
 
         // ── Dismiss cookie/GDPR banners before scrolling ──────────────────
         const cookieDismissSelectors = [
