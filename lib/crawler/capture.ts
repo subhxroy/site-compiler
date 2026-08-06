@@ -1,8 +1,14 @@
 import { chromium } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
+
+// Ensure browser binary path is set
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/ms-playwright';
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,10 +128,25 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       args: containerArgs,
     });
   } catch (launchErr: any) {
-    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback launch...`);
+    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting auto-installation fallback...`);
+    
+    // Auto-install Playwright chromium if binary is missing on cloud host
+    if (launchErr.message?.includes("Executable doesn't exist") || launchErr.message?.includes("Please run the following command")) {
+      try {
+        log('[Playwright Auto-Installer] Executing npx playwright install chromium into /tmp/ms-playwright...');
+        execSync('npx playwright install chromium', {
+          stdio: 'inherit',
+          env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/tmp/ms-playwright' },
+        });
+        log('[Playwright Auto-Installer] Chromium installed! Launching browser...');
+      } catch (cmdErr: any) {
+        log(`[Playwright Auto-Installer Warning] Command failed: ${cmdErr.message}`);
+      }
+    }
+
     browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
   }
   const context = await browser.newContext({

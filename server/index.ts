@@ -1,3 +1,7 @@
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/ms-playwright';
+}
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
