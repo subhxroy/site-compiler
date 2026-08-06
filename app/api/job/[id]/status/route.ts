@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getJob } from '@/lib/jobs/queue';
+import { getJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
 
 export async function GET(

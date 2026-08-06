@@ -18,6 +18,9 @@ export async function POST(req: Request) {
         email: email || null,
         displayName: displayName || email?.split('@')[0] || 'User',
         photoURL: photoURL || null,
+        canExport: true,
+        role: 'user',
+        status: 'active',
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
       });

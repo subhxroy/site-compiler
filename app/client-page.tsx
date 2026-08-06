@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { getApiUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { AuthModal } from '@/components/auth-modal';
 
 type OutputFormat = 'html' | 'react' | 'nextjs';
 type JobStatus =
@@ -187,9 +188,10 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [tab,      setTab]      = useState<'preview' | 'logs'>('preview');
   const [savedToFirebase, setSavedToFirebase] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Restore job state on page load or refresh (from query param or localStorage)
+  // Restore job state on page load or refresh
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -278,9 +280,16 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     if (tab === 'logs') logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [job?.logs, tab]);
 
+  // Require Sign In before export
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+
+    if (!user) {
+      setIsAuthOpen(true);
+      return;
+    }
+
     setLoading(true);
     setJob(null);
     setJobId(null);
@@ -324,19 +333,20 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     }
   };
 
-  const isActive   = loading || (job && job.status !== 'completed' && job.status !== 'failed');
-  const isComplete = job?.status === 'completed';
-  const isFailed   = job?.status === 'failed';
-  const viewWidths = { desktop: '100%', tablet: '768px', mobile: '390px' };
+  const currentStatus = job?.status || (loading ? 'pending' : null);
+  const isActive = currentStatus && !['completed', 'failed'].includes(currentStatus);
 
   return (
-    <main className="pt-24">
-      {/* ── Raycast Atmospheric Hero Section ──────────────────────────────── */}
-      <section className="relative overflow-hidden px-4 sm:px-6 pt-12 pb-20 md:pt-20 md:pb-28">
+    <div className="space-y-0 text-[#9c9c9d]">
+
+      {/* Auth Modal Triggered on Unauthenticated Export Attempt */}
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+
+      {/* ── Hero Section ─────────────────────────────────────────────────── */}
+      <section className="relative pt-28 sm:pt-36 pb-16 sm:pb-24 px-4 sm:px-6 overflow-hidden">
         
-        {/* Hero Atmospheric Backdrop */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute top-[10%] left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-[radial-gradient(ellipse_at_center,rgba(4,63,150,0.35)_0%,rgba(6,18,37,0.1)_70%,transparent_100%)] rounded-full blur-[80px]" />
+        {/* Subtle background ambient blur */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-[20%] left-1/3 w-[320px] h-[180px] bg-[#ff6363]/20 rounded-full blur-[100px] transform -rotate-12" />
         </div>
 
@@ -344,7 +354,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[6px] bg-[#1b1c1e] border border-[#2f3031] text-[11px] font-mono text-[#ff6363] uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />
-            Localhost Cockpit · Single Node Pipeline · Zero Billing
+            SiteCompiler Engine · Next.js 15 & React TSX Output
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-[56px] font-normal tracking-[0.22px] text-[#ffffff] leading-[1.17] max-w-4xl mx-auto">
@@ -416,10 +426,16 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   ) : (
                     <>
                       <Icon.Download />
-                      <span>Export Site to Clean Source</span>
+                      <span>{user ? 'Export Site to Clean Source' : 'Sign in to Export Site'}</span>
                     </>
                   )}
                 </button>
+
+                {!user && (
+                  <p className="text-[11px] font-mono text-[#ff6363] text-center pt-1">
+                    * Sign in required to compile websites and save your export history.
+                  </p>
+                )}
               </form>
             </div>
           </div>
@@ -427,7 +443,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-[12px] text-[#6a6b6c] pt-2">
             <span>v1.104.21</span>
             <span>|</span>
-            <span>Localhost Node 20+</span>
+            <span>Node 20+ Runtime</span>
             <span>|</span>
             <span>Playwright Hydration</span>
             <span>|</span>
@@ -450,214 +466,162 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             </div>
           )}
 
-          <div className={`p-5 rounded-16px raycast-key-card flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-            isComplete ? 'border-[#59d499]/40' : isFailed ? 'border-red-500/40' : 'border-[#2f3031]'
-          }`}>
-            <div className="min-w-0 flex-1">
-              <div className="font-mono text-[11px] text-[#6a6b6c] mb-1 truncate">Job ID: {job.id}</div>
-              <div className={`text-sm font-medium flex items-center gap-2 ${
-                isComplete ? 'text-[#59d499]' : isFailed ? 'text-red-400' : 'text-[#ffffff]'
-              }`}>
-                {isActive   && <Icon.Spinner size={15} />}
-                {isComplete && <Icon.Check size={15} />}
-                {isFailed   && <Icon.X size={15} />}
-                <span className="truncate">{job.progressMessage}</span>
+          <div className="raycast-key-card p-6 sm:p-8 space-y-6">
+            
+            {/* Status Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#1b1c1e]">
+              <div className="space-y-1">
+                <div className="text-[11px] font-mono text-[#6a6b6c]">Job ID: {job.id}</div>
+                <div className="text-sm font-medium text-[#ffffff] flex items-center gap-2">
+                  {job.status === 'completed' && <span className="text-[#59d499]"><Icon.Check size={16} /></span>}
+                  {job.status === 'failed'    && <span className="text-red-400"><Icon.X size={16} /></span>}
+                  {isActive && <Icon.Spinner size={16} />}
+                  <span>{job.progressMessage}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {job.status === 'completed' && job.downloadUrl && (
+                  <>
+                    {job.zipSizeKb && (
+                      <span className="font-mono text-xs text-[#6a6b6c]">{job.zipSizeKb} KB</span>
+                    )}
+                    <a
+                      href={getApiUrl(job.downloadUrl)}
+                      download
+                      className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2"
+                    >
+                      <Icon.Download />
+                      <span>Download ZIP</span>
+                    </a>
+                  </>
+                )}
+                {!isActive && (
+                  <button
+                    onClick={handleReset}
+                    className="px-3 py-2 rounded-[8px] bg-[#1b1c1e] text-[#9c9c9d] hover:text-white text-xs font-medium border border-[#363739] transition-colors cursor-pointer"
+                  >
+                    New Export
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-none">
-              {isComplete && job.zipSizeKb && (
-                <span className="font-mono text-xs text-[#9c9c9d]">{job.zipSizeKb} KB</span>
-              )}
-              {isComplete && job.downloadUrl && (
-                <a
-                  href={getApiUrl(job.downloadUrl)}
-                  className="raycast-button-primary px-4 py-2 text-xs flex items-center gap-1.5"
-                >
-                  <Icon.Download />
-                  <span>Download ZIP</span>
-                </a>
-              )}
-              {(isComplete || isFailed) && (
-                <button
-                  onClick={handleReset}
-                  className="px-3 py-1.5 rounded-[8px] bg-[#1b1c1e] text-[#9c9c9d] hover:text-white border border-[#2f3031] text-xs font-medium transition-colors cursor-pointer"
-                >
-                  New Export
-                </button>
-              )}
+            {/* Pipeline Step Badges */}
+            <div className="flex flex-wrap gap-2">
+              {STEPS.map((s) => (
+                <StepBadge key={s.key} state={stepState(job.status, s.key)} label={s.label} />
+              ))}
             </div>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
-            {STEPS.map((s) => (
-              <StepBadge key={s.key} state={stepState(job.status, s.key)} label={s.label} />
-            ))}
-          </div>
+            {/* Preview & Logs Tabs */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between border-b border-[#1b1c1e] pb-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTab('preview')}
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      tab === 'preview'
+                        ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                        : 'text-[#6a6b6c] hover:text-white'
+                    }`}
+                  >
+                    <Icon.Camera />
+                    <span>Screenshots</span>
+                  </button>
 
-          {(job.screenshots || (job.logs && job.logs.length > 0)) && (
-            <div className="raycast-key-card overflow-hidden">
-              <div className="flex items-center border-b border-[#2f3031] px-3 pt-2 gap-2 bg-[#07080a]">
-                <button
-                  onClick={() => setTab('preview')}
-                  className={`px-4 py-2 text-xs font-medium rounded-t-[6px] transition-colors flex items-center gap-1.5 cursor-pointer ${
-                    tab === 'preview' ? 'bg-[#111214] text-[#ffffff] border-t border-x border-[#2f3031]' : 'text-[#9c9c9d] hover:text-[#ffffff]'
-                  }`}
-                >
-                  <Icon.Camera />
-                  <span>Screenshots</span>
-                </button>
-                <button
-                  onClick={() => setTab('logs')}
-                  className={`px-4 py-2 text-xs font-medium rounded-t-[6px] transition-colors flex items-center gap-1.5 cursor-pointer ${
-                    tab === 'logs' ? 'bg-[#111214] text-[#ffffff] border-t border-x border-[#2f3031]' : 'text-[#9c9c9d] hover:text-[#ffffff]'
-                  }`}
-                >
-                  <Icon.Terminal />
-                  <span>Execution Logs</span>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />}
-                </button>
+                  <button
+                    onClick={() => setTab('logs')}
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      tab === 'logs'
+                        ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                        : 'text-[#6a6b6c] hover:text-white'
+                    }`}
+                  >
+                    <Icon.Terminal />
+                    <span>Execution Logs</span>
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />}
+                  </button>
+                </div>
 
-                {tab === 'preview' && job.screenshots && (
-                  <div className="ml-auto flex items-center gap-1 bg-[#111214] border border-[#2f3031] rounded-[6px] p-0.5 mb-1">
-                    {(['desktop','tablet','mobile'] as const).map((v) => (
+                {tab === 'preview' && (
+                  <div className="flex items-center gap-1 bg-[#1b1c1e] p-1 rounded-[6px] border border-[#363739]">
+                    {(['desktop', 'tablet', 'mobile'] as const).map((vp) => (
                       <button
-                        key={v}
-                        onClick={() => setViewport(v)}
-                        title={v.charAt(0).toUpperCase() + v.slice(1)}
-                        className={`p-1.5 rounded-[4px] transition-all cursor-pointer ${
-                          viewport === v ? 'bg-[#ff6363] text-[#040506]' : 'text-[#6a6b6c] hover:text-[#ffffff]'
+                        key={vp}
+                        onClick={() => setViewport(vp)}
+                        className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
+                          viewport === vp ? 'bg-[#ff6363] text-[#07080a]' : 'text-[#6a6b6c] hover:text-white'
                         }`}
+                        title={`${vp} viewport`}
                       >
-                        {viewportIcons[v]}
+                        {viewportIcons[vp]}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="p-4 bg-[#040506]">
-                {tab === 'preview' ? (
-                  job.screenshots ? (
-                    <div className="w-full overflow-auto bg-[#07080a] rounded-[8px] p-2 border border-[#2f3031]">
-                      <div
-                        className="mx-auto transition-all duration-300"
-                        style={{ maxWidth: viewWidths[viewport] }}
-                      >
-                        <img
-                          src={getApiUrl(job.screenshots[viewport])}
-                          alt={`${viewport} screenshot`}
-                          className="w-full object-top block rounded-[6px]"
-                        />
-                      </div>
-                    </div>
+              {tab === 'preview' ? (
+                <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] flex items-center justify-center bg-[#040506]">
+                  {job.screenshots ? (
+                    <img
+                      src={getApiUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
+                      alt={`${viewport} screenshot`}
+                      className="max-h-[500px] w-auto rounded-[6px] border border-[#2f3031] object-contain shadow-xl"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
                   ) : (
-                    <div className="h-40 flex flex-col items-center justify-center text-[#6a6b6c] text-xs gap-2">
+                    <div className="text-center space-y-2 py-12 text-[#6a6b6c]">
                       <Icon.Camera />
-                      {isActive ? 'Screenshots rendering...' : 'No screenshots captured'}
+                      <div className="text-xs font-mono">Screenshots rendering…</div>
                     </div>
-                  )
-                ) : (
-                  <div className="font-mono text-[12px] text-[#9c9c9d] bg-[#07080a] border border-[#2f3031] rounded-[8px] p-4 h-64 overflow-y-auto space-y-1 leading-relaxed">
-                    {job.logs.map((line, i) => (
-                      <div key={i} className={line.includes('ERROR') ? 'text-red-400' : ''}>
-                        <span className="text-[#6a6b6c] select-none">&gt; </span>
-                        {line}
-                      </div>
-                    ))}
-                    <div ref={logEndRef} />
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5">
+                  {job.logs.map((l, idx) => (
+                    <div key={idx} className="leading-relaxed">
+                      {l}
+                    </div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
+              )}
             </div>
-          )}
 
-          {isComplete && (
-            <div className="flex items-start gap-3 p-4 rounded-[12px] bg-[#111214] border border-[#2f3031] text-xs text-[#9c9c9d]">
-              <Icon.BookOpen />
-              <p className="leading-relaxed">
-                The generated ZIP includes all captured subpages, bundled assets, consolidated CSS, and a{' '}
-                <strong className="text-[#ffffff]">README.md</strong> with deployment steps for Vercel, Netlify, Cloudflare Pages, and local preview.
-              </p>
-            </div>
-          )}
+            {/* Export Summary Footer */}
+            {job.status === 'completed' && (
+              <div className="p-4 rounded-[10px] bg-[#1b1c1e]/50 border border-[#2f3031] text-xs text-[#9c9c9d] flex items-center gap-3">
+                <Icon.BookOpen />
+                <div>
+                  The generated ZIP includes all captured subpages, bundled assets, consolidated CSS, and a <strong className="text-white">README.md</strong> with deployment steps for Vercel, Netlify, Cloudflare Pages, and local preview.
+                </div>
+              </div>
+            )}
+          </div>
         </section>
       )}
 
-      {/* ── Raycast Feature Grid ── */}
-      <section id="features" className="py-20 border-t border-[#1b1c1e] bg-[#040506]">
-        <div className="max-w-[1100px] mx-auto px-6">
-          <h2 className="text-2xl sm:text-3xl font-medium text-[#ffffff] text-center mb-2">
-            Engineered for precision website reconstruction.
-          </h2>
-          <p className="text-[#6a6b6c] text-center text-sm mb-12">Every element, asset, and script captured faithfully.</p>
+      {/* FAQ Section */}
+      <section className="max-w-[800px] mx-auto px-4 sm:px-6 py-16 space-y-8 border-t border-[#1b1c1e]">
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-normal text-[#ffffff]">Frequently Asked Questions</h2>
+          <p className="text-xs text-[#6a6b6c]">Everything you need to know about SiteCompiler.</p>
+        </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              {
-                icon: <Icon.FileCode />,
-                title: 'Full DOM Capture',
-                desc: 'Playwright auto-scroll captures post-hydrated DOM elements, Framer Motion states, and dynamic components.',
-              },
-              {
-                icon: <Icon.Layers />,
-                title: 'All Assets Bundled',
-                desc: 'Images, SVG icons, embedded videos, and web fonts are fetched and saved locally for offline usage.',
-              },
-              {
-                icon: <Icon.Camera />,
-                title: 'Multi-Viewport Capture',
-                desc: 'Desktop (1440px), tablet (768px), and mobile (390px) screenshots generated automatically for audit.',
-              },
-              {
-                icon: <Icon.Archive />,
-                title: 'Single Clean ZIP',
-                desc: 'Packaged into a single clean zip archive ready for instant local preview or hosting deployment.',
-              },
-              {
-                icon: <Icon.BookOpen />,
-                title: 'README Included',
-                desc: 'Complete deployment instructions included in every ZIP for Netlify, Vercel, FTP, and localhost.',
-              },
-              {
-                icon: <Icon.Globe />,
-                title: 'Universal Platform Support',
-                desc: 'Framer, WordPress, Webflow, Wix, Squarespace, Shopify, and custom static sites supported.',
-              },
-            ].map((f) => (
-              <div
-                key={f.title}
-                className="raycast-key-card p-6 space-y-3 hover:border-[#454647] transition-all"
-              >
-                <div className="w-10 h-10 rounded-full bg-[#111214] border border-[#2f3031] flex items-center justify-center text-[#e6e6e6]">
-                  {f.icon}
-                </div>
-                <div className="text-[#ffffff] font-medium text-base">{f.title}</div>
-                <div className="text-[#9c9c9d] text-xs leading-relaxed font-normal">{f.desc}</div>
-              </div>
-            ))}
-          </div>
+        <div className="space-y-4">
+          {faqs.map((faq, idx) => (
+            <div key={idx} className="raycast-key-card p-6 space-y-2">
+              <h3 className="text-sm font-medium text-[#ffffff]">{faq.question}</h3>
+              <p className="text-xs text-[#9c9c9d] leading-relaxed">{faq.answer}</p>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* ── FAQ Section with Schema Support ── */}
-      <section className="py-20 border-t border-[#1b1c1e] bg-[#07080a]">
-        <div className="max-w-3xl mx-auto px-6 space-y-8">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl sm:text-3xl font-medium text-white">Frequently Asked Questions</h2>
-            <p className="text-sm text-[#9c9c9d]">Everything you need to know about SiteCompiler export architecture.</p>
-          </div>
-
-          <div className="space-y-4">
-            {faqs.map((faq, idx) => (
-              <div key={idx} className="raycast-key-card p-6 space-y-2">
-                <h3 className="text-base font-medium text-white">{faq.question}</h3>
-                <p className="text-xs text-[#9c9c9d] leading-relaxed">{faq.answer}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </main>
+    </div>
   );
 }

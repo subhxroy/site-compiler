@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createJob, processExportJob } from '@/lib/jobs/queue';
+import { createJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
 
 export async function POST(req: Request) {
@@ -40,7 +40,9 @@ export async function POST(req: Request) {
     // Local Node.js execution fallback
     const job = createJob(parsedUrl.href, format);
     
-    // Trigger asynchronous job processing in background without blocking API response
+    // Dynamically import the heavy processor (Playwright + generators) so this
+    // serverless function never bundles/loads it on the Netlify edge.
+    const { processExportJob } = await import('@/lib/jobs/process');
     processExportJob(job.id).catch((err) => {
       console.error(`Background job ${job.id} execution failed:`, err);
     });

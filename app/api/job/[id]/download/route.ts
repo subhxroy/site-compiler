@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getJob } from '@/lib/jobs/queue';
+import { getJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
 
 export async function GET(
