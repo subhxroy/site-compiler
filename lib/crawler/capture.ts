@@ -164,6 +164,10 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   let context: any;
   let page: any;
 
+  // Track network assets. Attached to every freshly created page so the listener
+  // survives browser relaunches (previously only the first page had it).
+  const networkAssetUrls = new Set<string>();
+
   const initBrowserAndContext = async () => {
     try {
       browser = await chromium.launch({
@@ -200,6 +204,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     });
 
     page = await context.newPage();
+    page.on('response', (resp: any) => {
+      const reqUrl = resp.url();
+      const ct = resp.headers()['content-type'] || '';
+      if (ct.startsWith('image/') || ct.startsWith('font/') || ct.includes('video/') || ct.includes('svg')) {
+        networkAssetUrls.add(reqUrl);
+      }
+    });
   };
 
   await initBrowserAndContext();
@@ -542,46 +553,68 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         // Take screenshots on entry page and save to both directory targets
         if (isEntry) {
-          log('Taking viewport screenshots of main page...');
-          // Desktop screenshot on current active page
+          log('Taking true responsive breakpoint screenshots of main page...');
+          
+          // 1. Desktop Breakpoint Screenshot (1440x900)
           try {
             const p1 = path.join(screensDir, 'desktop.png');
             const p2 = path.join(screensExportDir, 'desktop.png');
             await page.screenshot({ path: p1, fullPage: false, timeout: 6000 });
             try { fs.copyFileSync(p1, p2); } catch {}
           } catch {
-            log('Warning: Desktop screenshot timed out, skipping...');
+            log('Warning: Desktop screenshot timed out');
           }
 
-          // Tablet and Mobile screenshots in isolated temporary page tabs
-          for (const [name, size] of [
-            ['tablet', { width: 768, height: 1024 }],
-            ['mobile', { width: 390, height: 844 }],
-          ] as const) {
-            let shotPage: any;
+          // 2. True Tablet Breakpoint Screenshot (768x1024)
+          let tabTab: any;
+          try {
+            tabTab = await context.newPage();
+            await tabTab.setViewportSize({ width: 768, height: 1024 });
+            await tabTab.goto(currentUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 400));
+            const p1 = path.join(screensDir, 'tablet.png');
+            const p2 = path.join(screensExportDir, 'tablet.png');
+            await tabTab.screenshot({ path: p1, fullPage: false, timeout: 4000 });
+            try { fs.copyFileSync(p1, p2); } catch {}
+          } catch {
+            log('Warning: Tablet breakpoint screenshot fallback...');
             try {
-              shotPage = await context.newPage();
-              await shotPage.setViewportSize(size);
-              await shotPage.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
-              await shotPage.waitForTimeout(300);
-              const p1 = path.join(screensDir, `${name}.png`);
-              const p2 = path.join(screensExportDir, `${name}.png`);
-              await shotPage.screenshot({ path: p1, fullPage: false, timeout: 5000 });
-              try { fs.copyFileSync(p1, p2); } catch {}
-            } catch {
-              log(`Warning: Screenshot ${name} timed out, creating fallback from desktop view...`);
-              try {
-                const desk1 = path.join(screensDir, 'desktop.png');
-                const p1 = path.join(screensDir, `${name}.png`);
-                const p2 = path.join(screensExportDir, `${name}.png`);
-                if (fs.existsSync(desk1)) {
-                  fs.copyFileSync(desk1, p1);
-                  fs.copyFileSync(desk1, p2);
-                }
-              } catch {}
-            } finally {
-              try { if (shotPage && !shotPage.isClosed()) await shotPage.close().catch(() => {}); } catch {}
-            }
+              const desk1 = path.join(screensDir, 'desktop.png');
+              const p1 = path.join(screensDir, 'tablet.png');
+              const p2 = path.join(screensExportDir, 'tablet.png');
+              if (fs.existsSync(desk1)) {
+                fs.copyFileSync(desk1, p1);
+                fs.copyFileSync(desk1, p2);
+              }
+            } catch {}
+          } finally {
+            try { if (tabTab && !tabTab.isClosed()) await tabTab.close().catch(() => {}); } catch {}
+          }
+
+          // 3. True Mobile Breakpoint Screenshot (390x844)
+          let mobTab: any;
+          try {
+            mobTab = await context.newPage();
+            await mobTab.setViewportSize({ width: 390, height: 844 });
+            await mobTab.goto(currentUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 400));
+            const p1 = path.join(screensDir, 'mobile.png');
+            const p2 = path.join(screensExportDir, 'mobile.png');
+            await mobTab.screenshot({ path: p1, fullPage: false, timeout: 4000 });
+            try { fs.copyFileSync(p1, p2); } catch {}
+          } catch {
+            log('Warning: Mobile breakpoint screenshot fallback...');
+            try {
+              const desk1 = path.join(screensDir, 'desktop.png');
+              const p1 = path.join(screensDir, 'mobile.png');
+              const p2 = path.join(screensExportDir, 'mobile.png');
+              if (fs.existsSync(desk1)) {
+                fs.copyFileSync(desk1, p1);
+                fs.copyFileSync(desk1, p2);
+              }
+            } catch {}
+          } finally {
+            try { if (mobTab && !mobTab.isClosed()) await mobTab.close().catch(() => {}); } catch {}
           }
         }
       } catch (err) {
