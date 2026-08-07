@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { Zap, Smartphone, X, ShieldCheck, Check, Copy } from 'lucide-react';
 
 interface PaywallModalProps {
   isOpen: boolean;
@@ -94,15 +95,17 @@ export function PaywallModal({
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#6a6b6c] hover:text-white transition-colors cursor-pointer"
+          className="absolute top-4 right-4 text-[#6a6b6c] hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-[#1f2023]"
+          aria-label="Close modal"
         >
-          ✕
+          <X className="w-4 h-4" />
         </button>
 
         {/* Header */}
         <div className="space-y-1.5 text-center">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ff6363]/10 border border-[#ff6363]/30 text-[11px] font-mono text-[#ff6363] uppercase tracking-wider">
-            <span>⚡ Dynamic UPI Paywall</span>
+            <Zap className="w-3 h-3 text-[#ff6363]" />
+            <span>Dynamic UPI Paywall</span>
           </div>
           <h2 className="text-xl font-bold text-white tracking-tight">Unlock Export Download</h2>
           <p className="text-xs text-[#9c9c9d] leading-relaxed">
@@ -112,8 +115,9 @@ export function PaywallModal({
 
         {isAdmin && (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 text-center space-y-2">
-            <div className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-              ⚡ Admin Account — Free Export Pass
+            <div className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Admin Account — Free Export Pass</span>
             </div>
             <p className="text-xs text-[#9c9c9d]">
               You are logged in as an Administrator. You do not need to pay to download website export ZIPs.
@@ -177,9 +181,10 @@ export function PaywallModal({
             </div>
             <button
               onClick={handleCopyUpi}
-              className="px-2.5 py-1 rounded bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363] text-[10px] transition-colors cursor-pointer shrink-0"
+              className="px-2.5 py-1 rounded bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363] text-[10px] transition-colors cursor-pointer shrink-0 flex items-center gap-1"
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              <span>{copied ? 'Copied!' : 'Copy'}</span>
             </button>
           </div>
 
@@ -188,7 +193,8 @@ export function PaywallModal({
             href={upiString}
             className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all"
           >
-            <span>📱 Tap to Pay ₹{amount} via UPI App</span>
+            <Smartphone className="w-4 h-4" />
+            <span>Tap to Pay ₹{amount} via UPI App</span>
           </a>
         </div>
 

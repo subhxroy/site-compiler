@@ -1,10 +1,31 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/firebase/auth-context";
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: "#040506",
+};
+
 export const metadata: Metadata = {
-  title: "SiteCompiler — Admin Portal Console",
-  description: "Standalone Admin Management Portal for SiteCompiler.",
+  title: "SiteCompiler — Standalone Admin Console",
+  description: "Secure Administrator Console for managing SiteCompiler users, backend health, and export permissions.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
+  openGraph: {
+    title: "SiteCompiler Admin Console",
+    description: "Restricted Administrative Management Portal",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -13,8 +34,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased bg-[#040506] text-[#9c9c9d]">
+    <html lang="en" className="h-full scroll-smooth">
+      <head>
+        <meta name="robots" content="noindex, nofollow" />
+      </head>
+      <body className="min-h-full antialiased bg-[#040506] text-[#9c9c9d] font-sans selection:bg-[#ff6363]/30 selection:text-white">
         <AuthProvider>
           {children}
         </AuthProvider>
@@ -22,4 +46,3 @@ export default function RootLayout({
     </html>
   );
 }
-
