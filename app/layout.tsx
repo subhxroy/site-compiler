@@ -55,6 +55,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full scroll-smooth`}>
       <head>
+        <meta name="strix-verification" content="strix-verify-630d4e87255604878f201b170ae15e10" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
