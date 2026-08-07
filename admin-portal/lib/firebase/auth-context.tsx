@@ -33,11 +33,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    // Safety fallback timer to prevent infinite loading spinner if Firebase auth hangs
+    const timer = setTimeout(() => {
       setLoading(false);
-    });
-    return () => unsubscribe();
+    }, 2500);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        clearTimeout(timer);
+        setUser(currentUser);
+        setLoading(false);
+      },
+      (error) => {
+        clearTimeout(timer);
+        console.error('[Firebase Auth Error]', error);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {

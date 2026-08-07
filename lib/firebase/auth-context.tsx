@@ -51,30 +51,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser: User | null) => {
-      setUser(currentUser);
+    // Safety fallback timer to prevent infinite loading spinner if Firebase auth hangs
+    const timer = setTimeout(() => {
       setLoading(false);
+    }, 2500);
 
-      if (currentUser) {
-        // Sync user profile to Next.js API route (/api/user/sync)
-        try {
-          await fetch('/api/user/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uid: currentUser.uid,
-              email: currentUser.email,
-              displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-              photoURL: currentUser.photoURL || null,
-            }),
-          }).catch(() => {});
-        } catch {
-          // Silently handle offline/network sync errors
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser: User | null) => {
+        clearTimeout(timer);
+        setUser(currentUser);
+        setLoading(false);
+
+        if (currentUser) {
+          // Sync user profile to Next.js API route (/api/user/sync)
+          try {
+            await fetch('/api/user/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: currentUser.uid,
+                email: currentUser.email,
+                displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+                photoURL: currentUser.photoURL || null,
+              }),
+            }).catch(() => {});
+          } catch {
+            // Silently handle offline/network sync errors
+          }
         }
+      },
+      (error) => {
+        clearTimeout(timer);
+        console.error('[Firebase Auth Error]', error);
+        setLoading(false);
       }
-    });
+    );
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {
