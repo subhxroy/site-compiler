@@ -45,6 +45,15 @@ const jobStore = new Map<string, JobState>();
 // 10-minute export auto-cleanup routine (600,000 ms)
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
+const ACTIVE_STATUSES = new Set<JobStatus>([
+  'pending',
+  'crawling',
+  'parsing',
+  'detecting',
+  'generating',
+  'zipping',
+]);
+
 export function cleanupOldExportJobs(maxAgeMs: number = TEN_MINUTES_MS): void {
   try {
     const exportsDir = path.resolve(process.cwd(), 'exports');
@@ -55,6 +64,10 @@ export function cleanupOldExportJobs(maxAgeMs: number = TEN_MINUTES_MS): void {
 
     for (const entry of entries) {
       if (entry.name === '.gitkeep' || entry.name === '.gitignore') continue;
+      // Never purge an export dir while its job is still running — long crawls
+      // can keep the dir older than maxAgeMs between writes.
+      const job = jobStore.get(entry.name);
+      if (job && ACTIVE_STATUSES.has(job.status)) continue;
       const fullPath = path.join(exportsDir, entry.name);
       try {
         const stats = fs.statSync(fullPath);
@@ -85,9 +98,13 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): Job
   };
   jobStore.set(jobId, job);
 
-  // Schedule automatic purging of server files after 10 minutes
+  // Schedule automatic purging of server files after 10 minutes. Skip if the
+  // job is still running so a long crawl's export dir is never deleted mid-write;
+  // the mtime-based GC will pick it up once the job finishes.
   setTimeout(() => {
     try {
+      const job = jobStore.get(jobId);
+      if (job && ACTIVE_STATUSES.has(job.status)) return;
       const exportDir = path.resolve(process.cwd(), 'exports', jobId);
       if (fs.existsSync(exportDir)) {
         fs.rmSync(exportDir, { recursive: true, force: true });

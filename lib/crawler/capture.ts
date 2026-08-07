@@ -228,18 +228,33 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     return page;
   };
 
-  // Track network assets
-  const networkAssetUrls = new Set<string>();
-  page.on('response', (resp: any) => {
-    const reqUrl = resp.url();
-    const ct = resp.headers()['content-type'] || '';
-    if (ct.startsWith('image/') || ct.startsWith('font/') || ct.includes('video/') || ct.includes('svg')) {
-      networkAssetUrls.add(reqUrl);
+  const isBrowserCrashError = (err: any): boolean => {
+    const msg = String(err?.message || '');
+    if (
+      msg.includes('Target closed') ||
+      msg.includes('Target page, context or browser has been closed') ||
+      msg.includes('browser has closed') ||
+      msg.includes('browser has disconnected') ||
+      msg.includes('context or browser has been closed') ||
+      msg.includes('Execution context was destroyed') ||
+      msg.includes('Connection closed') ||
+      msg.includes('browserType.launch')
+    ) {
+      return true;
     }
-  });
+    try {
+      if (browser && !browser.isConnected()) return true;
+      if (page && page.isClosed()) return true;
+    } catch {
+      return true;
+    }
+    return false;
+  };
 
   const pagesToCrawl: string[] = [normalizedEntryUrl];
   const visitedUrls = new Set<string>();
+  const retryCounts = new Map<string, number>();
+  const MAX_PAGE_ATTEMPTS = 3;
   const capturedPages: PageCaptured[] = [];
   const allDiscoveredAssetUrls = new Set<string>();
   const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
@@ -253,9 +268,15 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       const rawCurrentUrl = pagesToCrawl.shift()!;
       const currentUrl = normalizeUrl(rawCurrentUrl);
 
-      if (visitedUrls.has(currentUrl)) continue;
-      visitedUrls.add(currentUrl);
-      pageCount++;
+      // Pages whose crawl crashed (browser/context closed on heavy JS sites) are
+      // re-queued for retry instead of being permanently dropped. Retry attempts
+      // don't re-check visited nor consume the page budget.
+      const tries = retryCounts.get(currentUrl) || 0;
+      if (tries === 0) {
+        if (visitedUrls.has(currentUrl)) continue;
+        visitedUrls.add(currentUrl);
+        pageCount++;
+      }
 
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
       log(`Crawling page ${pageCount}: ${currentUrl}`);
@@ -481,14 +502,16 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        capturedPages.push({
-          url: currentUrl,
-          pathname: new URL(currentUrl).pathname,
-          title: meta.title || currentUrl,
-          htmlFilename,
-          rawHtmlPath,
-          meta,
-        });
+        if (!capturedPages.some((p) => p.url === currentUrl)) {
+          capturedPages.push({
+            url: currentUrl,
+            pathname: new URL(currentUrl).pathname,
+            title: meta.title || currentUrl,
+            htmlFilename,
+            rawHtmlPath,
+            meta,
+          });
+        }
 
         // Collect DOM assets from this page
         let domAssets: string[] = [];
@@ -618,7 +641,23 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }
         }
       } catch (err) {
-        log(`Warning: Page crawl timeout or error for ${currentUrl}: ${err}`);
+        const crash = isBrowserCrashError(err);
+        const tries = retryCounts.get(currentUrl) || 0;
+        log(`Warning: Page crawl ${crash ? 'crash' : 'error'} for ${currentUrl}: ${err}`);
+
+        if (tries < MAX_PAGE_ATTEMPTS) {
+          retryCounts.set(currentUrl, tries + 1);
+          pagesToCrawl.push(currentUrl);
+          log(`[Retry ${tries + 1}/${MAX_PAGE_ATTEMPTS}] Re-queuing ${currentUrl} after ${crash ? 'browser crash' : 'crawl error'}...`);
+
+          if (crash) {
+            try { if (browser) await browser.close().catch(() => {}); } catch {}
+            await initBrowserAndContext();
+          }
+        } else {
+          log(`Dropping ${currentUrl} after ${MAX_PAGE_ATTEMPTS} failed attempts.`);
+        }
+
         try {
           await page.evaluate(() => window.stop()).catch(() => {});
         } catch {}

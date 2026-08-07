@@ -88,8 +88,8 @@ export function PaywallModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-md bg-[#0a0b0d] border border-[#2f3031] rounded-2xl p-5 sm:p-7 space-y-5 shadow-2xl text-left my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md animate-fadeIn">
+      <div className="relative w-full max-w-md max-h-[88vh] overflow-y-auto bg-[#0a0b0d] border border-[#2f3031] rounded-2xl p-5 sm:p-7 space-y-5 shadow-2xl text-left scrollbar-thin scrollbar-thumb-[#363739]">
         
         {/* Close Button */}
         <button
