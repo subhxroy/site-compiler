@@ -605,19 +605,27 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               {tab === 'preview' ? (
                 <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] max-h-[550px] overflow-y-auto bg-[#040506] scrollbar-thin scrollbar-thumb-[#363739]">
                   {job.screenshots ? (
-                    <img
-                      key={`${viewport}-${job.id}`}
-                      src={getApiUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
-                      alt={`${viewport} screenshot`}
-                      className="w-full h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto transition-all"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        const desktopUrl = getApiUrl(`/api/job/${job.id}/screenshot?type=desktop`);
-                        if (target.src !== desktopUrl) {
-                          target.src = desktopUrl;
-                        }
-                      }}
-                    />
+                    <div className="transition-all duration-300 ease-in-out">
+                      <img
+                        key={`${viewport}-${job.id}`}
+                        src={getApiUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
+                        alt={`${viewport} screenshot`}
+                        className={`h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto transition-all duration-300 ${
+                          viewport === 'mobile'
+                            ? 'w-[340px] max-w-full'
+                            : viewport === 'tablet'
+                            ? 'w-[560px] max-w-full'
+                            : 'w-full max-w-full'
+                        }`}
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          const desktopUrl = getApiUrl(`/api/job/${job.id}/screenshot?type=desktop`);
+                          if (target.src !== desktopUrl) {
+                            target.src = desktopUrl;
+                          }
+                        }}
+                      />
+                    </div>
                   ) : (
                     <div className="text-center space-y-2 py-12 text-[#6a6b6c]">
                       <Icon.Camera />
