@@ -160,47 +160,66 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     '--disable-blink-features=AutomationControlled',
   ];
 
-  let browser;
-  try {
-    browser = await chromium.launch({
-      headless: true,
-      ...(execPath && { executablePath: execPath }),
-      args: containerArgs,
-    });
-  } catch (launchErr: any) {
-    log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback...`);
-    browser = await chromium.launch({
-      headless: true,
-      ...(execPath && { executablePath: execPath }),
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process', '--no-zygote'],
-    });
-  }
-  const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-    extraHTTPHeaders: {
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'sec-ch-ua': '"Chromium";v="126", "Google Chrome";v="126"',
-      'sec-ch-ua-platform': '"Windows"',
-    },
-    ignoreHTTPSErrors: true,
-    javaScriptEnabled: true,
-  });
+  let browser: any;
+  let context: any;
+  let page: any;
 
-  // Spoof navigator properties to avoid bot detection
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-  });
+  const initBrowserAndContext = async () => {
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        ...(execPath && { executablePath: execPath }),
+        args: containerArgs,
+      });
+    } catch (launchErr: any) {
+      log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback...`);
+      browser = await chromium.launch({
+        headless: true,
+        ...(execPath && { executablePath: execPath }),
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process', '--no-zygote'],
+      });
+    }
+    context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'sec-ch-ua': '"Chromium";v="126", "Google Chrome";v="126"',
+        'sec-ch-ua-platform': '"Windows"',
+      },
+      ignoreHTTPSErrors: true,
+      javaScriptEnabled: true,
+    });
 
-  let page = await context.newPage();
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    });
+
+    page = await context.newPage();
+  };
+
+  await initBrowserAndContext();
+
+  const ensureActivePage = async () => {
+    try {
+      if (page && !page.isClosed() && context && browser && browser.isConnected()) {
+        return page;
+      }
+    } catch {}
+
+    log('[Browser Engine] Re-launching browser instance & context...');
+    try { if (browser) await browser.close().catch(() => {}); } catch {}
+    await initBrowserAndContext();
+    return page;
+  };
 
   // Track network assets
   const networkAssetUrls = new Set<string>();
-  page.on('response', (resp) => {
+  page.on('response', (resp: any) => {
     const reqUrl = resp.url();
     const ct = resp.headers()['content-type'] || '';
     if (ct.startsWith('image/') || ct.startsWith('font/') || ct.includes('video/') || ct.includes('svg')) {
@@ -218,10 +237,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     let pageCount = 0;
 
     while (pagesToCrawl.length > 0 && pageCount < maxPages) {
-      if (page.isClosed()) {
-        log('[Browser Engine] Re-opening closed page instance...');
-        page = await context.newPage();
-      }
+      page = await ensureActivePage();
 
       const rawCurrentUrl = pagesToCrawl.shift()!;
       const currentUrl = normalizeUrl(rawCurrentUrl);
@@ -522,24 +538,35 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         // Take screenshots on entry page and save to both directory targets
         if (isEntry) {
           log('Taking viewport screenshots of main page...');
+          // Desktop screenshot on current active page
+          try {
+            const p1 = path.join(screensDir, 'desktop.png');
+            const p2 = path.join(screensExportDir, 'desktop.png');
+            await page.screenshot({ path: p1, fullPage: false, timeout: 6000 });
+            try { fs.copyFileSync(p1, p2); } catch {}
+          } catch {
+            log('Warning: Desktop screenshot timed out, skipping...');
+          }
+
+          // Tablet and Mobile screenshots in isolated temporary page tabs
           for (const [name, size] of [
-            ['desktop', { width: 1440, height: 900 }],
-            ['tablet',  { width: 768,  height: 1024 }],
-            ['mobile',  { width: 390,  height: 844  }],
+            ['tablet', { width: 768, height: 1024 }],
+            ['mobile', { width: 390, height: 844 }],
           ] as const) {
+            let shotPage: any;
             try {
-              await page.setViewportSize(size);
-              await page.waitForTimeout(200);
+              shotPage = await context.newPage();
+              await shotPage.setViewportSize(size);
+              await shotPage.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
+              await shotPage.waitForTimeout(300);
               const p1 = path.join(screensDir, `${name}.png`);
               const p2 = path.join(screensExportDir, `${name}.png`);
-              await page.screenshot({
-                path: p1,
-                fullPage: false,
-                timeout: 8000,
-              });
+              await shotPage.screenshot({ path: p1, fullPage: false, timeout: 5000 });
               try { fs.copyFileSync(p1, p2); } catch {}
             } catch {
               log(`Warning: Screenshot ${name} timed out, skipping...`);
+            } finally {
+              try { if (shotPage && !shotPage.isClosed()) await shotPage.close().catch(() => {}); } catch {}
             }
           }
         }
