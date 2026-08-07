@@ -11,20 +11,20 @@ export const metadata = buildMetadata({
 
 const pricingFaqs = [
   {
-    question: 'Is there a free plan available?',
-    answer: 'Yes, the Free plan is completely free forever. It includes personal use, limited crawl depth, and community support — no credit card required.',
+    question: 'How does billing work for website exports?',
+    answer: 'We use a transparent pay-per-export model starting at ₹20 per 10 pages strictly to cover Playwright browser rendering and server resources. Once your UPI payment is submitted, your complete ZIP package is unlocked for instant download.',
   },
   {
-    question: 'Can I export sites to commercial projects?',
-    answer: 'Absolutely. All exported code, styles, and assets belong entirely to you with zero royalty or recurring platform lock-in.',
+    question: 'Can I export sites for commercial projects?',
+    answer: 'Absolutely. All exported code, styles, and assets belong entirely to you with zero recurring platform lock-in or licensing fees.',
   },
   {
-    question: 'What does Pro include that Free does not?',
-    answer: 'Pro gives you unlimited crawl depth, all export formats (HTML, React, Next.js, Tailwind), priority support, and full API access for programmatic exports.',
+    question: 'Why is there a minimal fee per export?',
+    answer: 'SiteCompiler executes multi-page Playwright browser instances to render dynamic JavaScript and reconstruct editable components. The minimal ₹20 fee covers compute costs without forcing expensive monthly subscriptions.',
   },
   {
-    question: 'What additional features come with Enterprise?',
-    answer: 'Enterprise includes everything in Pro plus team collaboration, custom integrations, dedicated support, and an SLA guarantee for mission-critical workloads.',
+    question: 'Are there any hidden recurring subscriptions?',
+    answer: 'No. You only pay per export when you convert a website. There are no monthly recurring fees, hidden tiers, or auto-renewing commitments.',
   },
 ];
 
