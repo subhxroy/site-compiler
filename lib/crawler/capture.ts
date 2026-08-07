@@ -250,9 +250,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
       try {
-        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        try {
+          await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        } catch {
+          log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, falling back to commit load...`);
+          await page.goto(currentUrl, { waitUntil: 'commit', timeout: 15000 });
+        }
         
-        try { await page.waitForLoadState('networkidle', { timeout: 2000 }); } catch {}
+        try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
 
         // ── Agentic Engine: Smart Preloader Detection & Hydration Wait ─────
         log(`[Agent Engine] Inspecting DOM & awaiting preloader resolution on ${currentUrl}...`);
@@ -319,7 +324,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        await page.waitForTimeout(600);
+        await new Promise((r) => setTimeout(r, 600));
 
         // Dismiss cookie/GDPR banners
         const cookieDismissSelectors = [
@@ -389,7 +394,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         // Extract internal links for subpage crawling
         let internalLinks: string[] = [];
         try {
-          internalLinks = await page.evaluate((targetHost) => {
+          internalLinks = await page.evaluate((targetHost: string) => {
             const links = new Set<string>();
             const cleanHost = (h: string) => h.toLowerCase().replace(/^www\./, '');
             const normalizedTarget = cleanHost(targetHost);
@@ -564,7 +569,16 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
               await shotPage.screenshot({ path: p1, fullPage: false, timeout: 5000 });
               try { fs.copyFileSync(p1, p2); } catch {}
             } catch {
-              log(`Warning: Screenshot ${name} timed out, skipping...`);
+              log(`Warning: Screenshot ${name} timed out, creating fallback from desktop view...`);
+              try {
+                const desk1 = path.join(screensDir, 'desktop.png');
+                const p1 = path.join(screensDir, `${name}.png`);
+                const p2 = path.join(screensExportDir, `${name}.png`);
+                if (fs.existsSync(desk1)) {
+                  fs.copyFileSync(desk1, p1);
+                  fs.copyFileSync(desk1, p2);
+                }
+              } catch {}
             } finally {
               try { if (shotPage && !shotPage.isClosed()) await shotPage.close().catch(() => {}); } catch {}
             }
