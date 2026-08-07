@@ -32,9 +32,13 @@ export function PaywallModal({
 
   if (!isOpen) return null;
 
-  const upiId = process.env.NEXT_PUBLIC_UPI_ID || 'subhankarroy@upi';
-  const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=SiteCompiler&am=${amount}&cu=INR`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiString)}`;
+  const upiId = process.env.NEXT_PUBLIC_UPI_ID || 'contact.subhroy-1@okicici';
+  const payeeName = process.env.NEXT_PUBLIC_UPI_NAME || 'Subh Roy';
+  const bankDetails = process.env.NEXT_PUBLIC_UPI_BANK || 'State Bank of India 6322';
+
+  // Build dynamic UPI Deep Link with payee, amount, currency, and job note
+  const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(`SiteCompiler Export ${jobId}`)}`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(upiString)}`;
 
   const handleCopyUpi = () => {
     navigator.clipboard.writeText(upiId);
@@ -45,7 +49,7 @@ export function PaywallModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!senderAccount.trim() || !utrNumber.trim()) {
-      setError('Please provide both Account Name and UTR/Transaction ID');
+      setError('Please provide both Sender Name/App and 12-digit UTR/Transaction ID');
       return;
     }
 
@@ -82,8 +86,8 @@ export function PaywallModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-md bg-[#0a0b0d] border border-[#2f3031] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl text-left">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto">
+      <div className="relative w-full max-w-md bg-[#0a0b0d] border border-[#2f3031] rounded-2xl p-5 sm:p-7 space-y-5 shadow-2xl text-left my-8">
         
         {/* Close Button */}
         <button
@@ -96,52 +100,73 @@ export function PaywallModal({
         {/* Header */}
         <div className="space-y-1.5 text-center">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ff6363]/10 border border-[#ff6363]/30 text-[11px] font-mono text-[#ff6363] uppercase tracking-wider">
-            <span>⚡ Server Cost Paywall</span>
+            <span>⚡ Dynamic UPI Paywall</span>
           </div>
           <h2 className="text-xl font-bold text-white tracking-tight">Unlock Export Download</h2>
           <p className="text-xs text-[#9c9c9d] leading-relaxed">
-            Minimal charge required strictly for backend server hosting & Playwright browser rendering.
+            Scan dynamic QR or tap to pay <strong className="text-white">₹{amount} INR</strong> to unlock your {pageCount} page(s) ZIP bundle.
           </p>
         </div>
 
-        {/* Summary Details */}
-        <div className="raycast-key-card p-4 rounded-xl space-y-2 text-xs font-mono bg-[#111214]">
-          <div className="flex justify-between text-[#9c9c9d]">
-            <span>Captured Pages:</span>
-            <span className="text-white font-bold">{pageCount} page(s)</span>
+        {/* Dynamic GPay-style UPI Card */}
+        <div className="bg-[#17181c] border border-[#2e2f33] rounded-2xl p-5 space-y-4 text-center shadow-inner">
+          
+          {/* Payee Header */}
+          <div className="flex items-center justify-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white text-xs font-bold shadow">
+              SR
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-bold text-white leading-none">{payeeName}</div>
+              <div className="text-[10px] font-mono text-[#8a8b8d]">Verified Merchant</div>
+            </div>
+            <div className="ml-auto px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-xs font-mono">
+              ₹{amount}
+            </div>
           </div>
-          <div className="flex justify-between text-[#9c9c9d]">
-            <span>Target Site:</span>
-            <span className="text-[#ff6363] truncate max-w-[200px]">{url}</span>
-          </div>
-          <div className="border-t border-[#2f3031] pt-2 flex justify-between text-sm">
-            <span className="text-white font-medium">Total Amount Due:</span>
-            <span className="text-emerald-400 font-bold text-lg">₹{amount} INR</span>
-          </div>
-        </div>
 
-        {/* UPI QR & Payment Details */}
-        <div className="space-y-3 text-center">
-          <div className="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto">
+          {/* Dynamic QR Code */}
+          <div className="bg-white p-3 rounded-xl inline-block shadow-lg mx-auto relative group">
             <img
               src={qrCodeUrl}
-              alt={`Scan QR to pay ₹${amount}`}
-              className="w-40 h-40 object-contain mx-auto"
+              alt={`Scan QR to pay ₹${amount} to ${payeeName}`}
+              className="w-44 h-44 object-contain mx-auto"
             />
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-xs font-mono">
-            <span className="text-[#9c9c9d]">UPI ID:</span>
-            <span className="text-white font-bold bg-[#1b1c1e] px-2.5 py-1 rounded border border-[#2f3031]">
-              {upiId}
-            </span>
+          <p className="text-[11px] text-[#9c9c9d] font-mono">
+            Scan to pay <span className="text-emerald-400 font-bold">₹{amount}</span> with GPay, PhonePe, Paytm or any UPI app
+          </p>
+
+          {/* Bank Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#22242a] border border-[#33353c] text-xs font-mono text-[#b0b1b5]">
+            <div className="w-4 h-4 rounded-full bg-cyan-500 text-black flex items-center justify-center text-[9px] font-bold">
+              ₹
+            </div>
+            <span>{bankDetails}</span>
+          </div>
+
+          {/* UPI ID Copy Bar */}
+          <div className="flex items-center justify-between bg-[#0e0f12] p-2.5 rounded-xl border border-[#2b2c30] text-xs font-mono">
+            <div className="truncate pr-2">
+              <span className="text-[#6a6b6c] mr-1.5">UPI ID:</span>
+              <span className="text-white font-bold">{upiId}</span>
+            </div>
             <button
               onClick={handleCopyUpi}
-              className="px-2 py-1 rounded bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363] text-[10px] transition-colors cursor-pointer"
+              className="px-2.5 py-1 rounded bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363] text-[10px] transition-colors cursor-pointer shrink-0"
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
+
+          {/* Direct Mobile Deep Link Button */}
+          <a
+            href={upiString}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all"
+          >
+            <span>📱 Tap to Pay ₹{amount} via UPI App</span>
+          </a>
         </div>
 
         {/* Form Error */}
@@ -152,15 +177,15 @@ export function PaywallModal({
         )}
 
         {/* Payment Verification Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="space-y-1">
             <label className="text-[11px] font-mono text-[#9c9c9d] uppercase tracking-wider block">
-              Sender Account / App Name *
+              Sender Name / App *
             </label>
             <input
               type="text"
               required
-              placeholder="e.g. Subhankar Roy (GPay / Paytm)"
+              placeholder="e.g. Subh Roy (GPay / Paytm)"
               value={senderAccount}
               onChange={(e) => setSenderAccount(e.target.value)}
               className="w-full px-3.5 py-2.5 raycast-inset-input text-xs text-white placeholder-[#6a6b6c] outline-none rounded-lg focus:border-[#ff6363]"
@@ -169,7 +194,7 @@ export function PaywallModal({
 
           <div className="space-y-1">
             <label className="text-[11px] font-mono text-[#9c9c9d] uppercase tracking-wider block">
-              UTR / Transaction ID *
+              12-Digit UTR / Transaction ID *
             </label>
             <input
               type="text"
