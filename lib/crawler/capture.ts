@@ -212,6 +212,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const visitedUrls = new Set<string>();
   const capturedPages: PageCaptured[] = [];
   const allDiscoveredAssetUrls = new Set<string>();
+  const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
 
   try {
     let pageCount = 0;
@@ -254,46 +255,52 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         }
 
         // Capped Fast Scroll to trigger lazy loading & React hydration
-        await page.evaluate(async () => {
-          const maxScroll = Math.min(
-            Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-            4000
-          );
-          for (let y = 0; y < maxScroll; y += 500) {
-            window.scrollTo({ top: y, behavior: 'instant' });
-            await new Promise((r) => setTimeout(r, 40));
-          }
-          window.scrollTo(0, 0);
-          await new Promise((r) => setTimeout(r, 150));
-        });
+        try {
+          await page.evaluate(async () => {
+            const maxScroll = Math.min(
+              Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+              4000
+            );
+            for (let y = 0; y < maxScroll; y += 500) {
+              window.scrollTo({ top: y, behavior: 'instant' });
+              await new Promise((r) => setTimeout(r, 40));
+            }
+            window.scrollTo(0, 0);
+            await new Promise((r) => setTimeout(r, 150));
+          });
+        } catch {}
 
         await page.waitForTimeout(400);
 
         // Extract internal links for subpage crawling
-        const internalLinks: string[] = await page.evaluate((targetHost) => {
-          const links = new Set<string>();
-          const anchors = document.querySelectorAll('a[href]');
-          anchors.forEach((el) => {
-            try {
-              const a = el as HTMLAnchorElement;
-              const hrefProp = a.href;
-              if (!hrefProp || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
-              if (a.hostname === targetHost && (a.protocol === 'http:' || a.protocol === 'https:')) {
-                let p = a.pathname || '/';
-                if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-                const norm = `${a.protocol}//${a.host}${p}`;
-                links.add(norm);
-              }
-            } catch {}
-          });
-          return [...links];
-        }, targetHost);
+        let internalLinks: string[] = [];
+        try {
+          internalLinks = await page.evaluate((targetHost) => {
+            const links = new Set<string>();
+            const anchors = document.querySelectorAll('a[href]');
+            anchors.forEach((el) => {
+              try {
+                const a = el as HTMLAnchorElement;
+                const hrefProp = a.href;
+                if (!hrefProp || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
+                if (a.hostname === targetHost && (a.protocol === 'http:' || a.protocol === 'https:')) {
+                  let p = a.pathname || '/';
+                  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+                  const norm = `${a.protocol}//${a.host}${p}`;
+                  links.add(norm);
+                }
+              } catch {}
+            });
+            return [...links];
+          }, targetHost);
+        } catch {}
 
         log(`Discovered ${internalLinks.length} internal links on ${currentUrl}`);
 
         for (const rawLink of internalLinks) {
           const link = normalizeUrl(rawLink);
-          if (!visitedUrls.has(link) && !pagesToCrawl.includes(link)) {
+          const isExternalDomainInPath = /\/(www\.|linkedin\.com|twitter\.com|facebook\.com|instagram\.com|github\.com|youtube\.com)/i.test(link);
+          if (!visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
             if (!link.match(/\.(png|jpg|jpeg|gif|webp|svg|pdf|zip|mp4|css|js)($|\?)/i)) {
               pagesToCrawl.push(link);
               log(`Queued subpage: ${link}`);
@@ -304,31 +311,34 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         // Capture page DOM HTML
         const pageHtml = await page.content();
         const htmlFilename = urlToHtmlFilename(currentUrl, isEntry);
-        const rawHtmlPath = path.join(pagesRawDir, htmlFilename);
+        const rawHtmlPath = path.join(/* turbopackIgnore: true */ pagesRawDir, htmlFilename);
         fs.writeFileSync(rawHtmlPath, pageHtml, 'utf-8');
 
         if (isEntry) {
-          fs.writeFileSync(path.join(rawDir, 'page.html'), pageHtml, 'utf-8');
+          fs.writeFileSync(path.join(/* turbopackIgnore: true */ rawDir, 'page.html'), pageHtml, 'utf-8');
         }
 
         // Extract Page Metadata
-        const meta: ExtractedMeta = await page.evaluate(() => {
-          const title = document.title || '';
-          const canonicalEl = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-          const canonicalUrl = canonicalEl?.href || null;
-          const metaTags: Array<{ name?: string; property?: string; content?: string }> = [];
-          document.querySelectorAll('meta').forEach((m) => {
-            const name     = m.getAttribute('name')     || undefined;
-            const property = m.getAttribute('property') || undefined;
-            const content  = m.getAttribute('content')  || undefined;
-            if (name || property) metaTags.push({ name, property, content });
+        let meta: ExtractedMeta = { title: currentUrl, canonicalUrl: null, metaTags: [], jsonLd: [] };
+        try {
+          meta = await page.evaluate(() => {
+            const title = document.title || '';
+            const canonicalEl = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+            const canonicalUrl = canonicalEl?.href || null;
+            const metaTags: Array<{ name?: string; property?: string; content?: string }> = [];
+            document.querySelectorAll('meta').forEach((m) => {
+              const name     = m.getAttribute('name')     || undefined;
+              const property = m.getAttribute('property') || undefined;
+              const content  = m.getAttribute('content')  || undefined;
+              if (name || property) metaTags.push({ name, property, content });
+            });
+            const jsonLd: unknown[] = [];
+            document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
+              try { if (s.textContent) jsonLd.push(JSON.parse(s.textContent)); } catch {}
+            });
+            return { title, canonicalUrl, metaTags, jsonLd };
           });
-          const jsonLd: unknown[] = [];
-          document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
-            try { if (s.textContent) jsonLd.push(JSON.parse(s.textContent)); } catch {}
-          });
-          return { title, canonicalUrl, metaTags, jsonLd };
-        });
+        } catch {}
 
         capturedPages.push({
           url: currentUrl,
@@ -340,37 +350,65 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         });
 
         // Collect DOM assets from this page
-        const domAssets: string[] = await page.evaluate(() => {
-          const urls = new Set<string>();
-          document.querySelectorAll('img').forEach((el) => {
-            if (el.src && !el.src.startsWith('data:')) urls.add(el.src);
-            el.srcset?.split(',').forEach((p) => {
-              const u = p.trim().split(/\s+/)[0];
-              if (u && !u.startsWith('data:')) urls.add(u);
+        let domAssets: string[] = [];
+        try {
+          domAssets = await page.evaluate(() => {
+            const urls = new Set<string>();
+            document.querySelectorAll('img').forEach((el) => {
+              if (el.src && !el.src.startsWith('data:')) urls.add(el.src);
+              el.srcset?.split(',').forEach((p) => {
+                const u = p.trim().split(/\s+/)[0];
+                if (u && !u.startsWith('data:')) urls.add(u);
+              });
             });
-          });
-          document.querySelectorAll('source').forEach((el) => {
-            if ((el as HTMLSourceElement).src) urls.add((el as HTMLSourceElement).src);
-            (el as HTMLSourceElement).srcset?.split(',').forEach((p) => {
-              const u = p.trim().split(/\s+/)[0];
-              if (u) urls.add(u);
+            document.querySelectorAll('source').forEach((el) => {
+              if ((el as HTMLSourceElement).src) urls.add((el as HTMLSourceElement).src);
+              (el as HTMLSourceElement).srcset?.split(',').forEach((p) => {
+                const u = p.trim().split(/\s+/)[0];
+                if (u) urls.add(u);
+              });
             });
+            document.querySelectorAll('video').forEach((el) => {
+              if (el.src) urls.add(el.src);
+              if (el.poster) urls.add(el.poster);
+            });
+            document.querySelectorAll<HTMLLinkElement>('link[rel*="icon"],link[rel*="apple"]').forEach((el) => {
+              if (el.href) urls.add(el.href);
+            });
+            document.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
+              const m = el.style.backgroundImage.match(/url\(['"]?(.*?)['"]?\)/);
+              if (m?.[1] && !m[1].startsWith('data:')) urls.add(m[1]);
+            });
+            return [...urls];
           });
-          document.querySelectorAll('video').forEach((el) => {
-            if (el.src) urls.add(el.src);
-            if (el.poster) urls.add(el.poster);
-          });
-          document.querySelectorAll<HTMLLinkElement>('link[rel*="icon"],link[rel*="apple"]').forEach((el) => {
-            if (el.href) urls.add(el.href);
-          });
-          document.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
-            const m = el.style.backgroundImage.match(/url\(['"]?(.*?)['"]?\)/);
-            if (m?.[1] && !m[1].startsWith('data:')) urls.add(m[1]);
-          });
-          return [...urls];
-        });
+        } catch {}
 
         domAssets.forEach((u) => allDiscoveredAssetUrls.add(u));
+
+        // Extract stylesheets from this active DOM context
+        try {
+          const stylesOnPage = await page.evaluate(() => {
+            const out: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
+            document.querySelectorAll<HTMLStyleElement>('style').forEach((s) => {
+              if (s.textContent?.trim()) out.push({ type: 'inline', content: s.textContent });
+            });
+            document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((l) => {
+              if (l.href) out.push({ type: 'link', href: l.href });
+            });
+            return out;
+          });
+          for (const st of stylesOnPage) {
+            if (st.type === 'inline' && st.content) {
+              if (!collectedStylesheetData.some((s) => s.type === 'inline' && s.content === st.content)) {
+                collectedStylesheetData.push(st);
+              }
+            } else if (st.type === 'link' && st.href) {
+              if (!collectedStylesheetData.some((s) => s.type === 'link' && s.href === st.href)) {
+                collectedStylesheetData.push(st);
+              }
+            }
+          }
+        } catch {}
 
         // Take screenshots on entry page and save to both directory targets
         if (isEntry) {
@@ -382,13 +420,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           ] as const) {
             try {
               await page.setViewportSize(size);
-              await page.waitForTimeout(150);
+              await page.waitForTimeout(200);
               const p1 = path.join(screensDir, `${name}.png`);
               const p2 = path.join(screensExportDir, `${name}.png`);
               await page.screenshot({
                 path: p1,
                 fullPage: false,
-                timeout: 4000,
+                timeout: 8000,
               });
               try { fs.copyFileSync(p1, p2); } catch {}
             } catch {
@@ -398,6 +436,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         }
       } catch (err) {
         log(`Warning: Page crawl timeout or error for ${currentUrl}: ${err}`);
+        try {
+          await page.evaluate(() => window.stop()).catch(() => {});
+        } catch {}
       }
     }
 
@@ -405,20 +446,36 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
     // ── Extract stylesheets ─────────────────────────────────────────────
     log('Extracting stylesheets...');
-    const stylesheetData = await page.evaluate(() => {
-      const out: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
-      document.querySelectorAll<HTMLStyleElement>('style').forEach((s) => {
-        if (s.textContent?.trim()) out.push({ type: 'inline', content: s.textContent });
-      });
-      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((l) => {
-        if (l.href) out.push({ type: 'link', href: l.href });
-      });
-      return out;
-    });
+    // Fallback: Also extract stylesheets from captured HTML files if missing
+    for (const cp of capturedPages) {
+      try {
+        const html = fs.readFileSync(cp.rawHtmlPath, 'utf-8');
+        const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+        let match;
+        while ((match = styleRegex.exec(html)) !== null) {
+          const content = match[1]?.trim();
+          if (content && !collectedStylesheetData.some((s) => s.type === 'inline' && s.content === content)) {
+            collectedStylesheetData.push({ type: 'inline', content });
+          }
+        }
+        const linkRegex = /<link[^>]+rel=["']?stylesheet["']?[^>]*>/gi;
+        while ((match = linkRegex.exec(html)) !== null) {
+          const hrefMatch = match[0].match(/href=["']([^"']+)["']/i);
+          if (hrefMatch?.[1]) {
+            try {
+              const absoluteHref = new URL(hrefMatch[1], cp.url).href;
+              if (!collectedStylesheetData.some((s) => s.type === 'link' && s.href === absoluteHref)) {
+                collectedStylesheetData.push({ type: 'link', href: absoluteHref });
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
 
     const cssPaths: string[] = [];
     let styleIdx = 1;
-    for (const s of stylesheetData) {
+    for (const s of collectedStylesheetData) {
       if (s.type === 'inline' && s.content) {
         const p = path.join(stylesDir, `style_${styleIdx++}.css`);
         fs.writeFileSync(p, s.content, 'utf-8');
