@@ -12,14 +12,10 @@ import { processExportJob } from '../lib/jobs/process';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS configuration - Allow Netlify frontend domain or fallback to all origins
-const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'https://site-compiler.netlify.app', 'https://sitecompiler-app.netlify.app', 'http://localhost:3000', 'http://localhost:8888']
-  : ['https://site-compiler.netlify.app', 'https://sitecompiler-app.netlify.app', 'http://localhost:3000', 'http://localhost:8888'];
-
+// CORS configuration - Allow all origins dynamically (Netlify, Vercel, localhost, custom domains)
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -94,6 +90,11 @@ app.get('/api/job/:id/download', (req: Request, res: Response) => {
 
   if (!job || job.status !== 'completed') {
     res.status(404).json({ error: 'Export package not ready' });
+    return;
+  }
+
+  if (!job.paymentApproved) {
+    res.status(403).json({ error: 'Export pending admin payment approval' });
     return;
   }
 

@@ -24,6 +24,14 @@ export interface JobState {
   downloadUrl?: string;
   zipSizeKb?: number;
   fileCount?: number;
+  pageCount?: number;
+  amount?: number;
+  paymentSubmitted?: boolean;
+  paymentApproved?: boolean;
+  senderAccount?: string;
+  utrNumber?: string;
+  paymentSubmittedAt?: number;
+  userEmail?: string;
   screenshots?: {
     desktop: string;
     tablet: string;

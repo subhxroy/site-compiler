@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/lib/firebase/auth-context";
 
 export const metadata: Metadata = {
   title: "SiteCompiler — Admin Portal Console",
@@ -14,8 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-[#040506] text-[#9c9c9d]">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

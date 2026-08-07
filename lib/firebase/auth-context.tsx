@@ -31,6 +31,7 @@ interface AuthContextType {
   signOutUser: () => Promise<void>;
   saveUserExport: (exportData: UserExportRecord) => Promise<void>;
   getUserExports: () => Promise<UserExportRecord[]>;
+  getIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -42,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   signOutUser: async () => {},
   saveUserExport: async () => {},
   getUserExports: async () => [],
+  getIdToken: async () => null,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -118,6 +120,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const getIdToken = async (): Promise<string | null> => {
+    if (!auth.currentUser) return null;
+    return await auth.currentUser.getIdToken(true);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -129,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOutUser,
         saveUserExport,
         getUserExports,
+        getIdToken,
       }}
     >
       {children}

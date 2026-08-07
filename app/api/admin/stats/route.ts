@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { API_BASE_URL } from '@/lib/api-config';
+import { verifyAdminRequest } from '@/lib/firebase/verify-admin';
 
-export async function GET() {
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export async function GET(req: Request) {
+  const authResult = await verifyAdminRequest(req);
+  if (!authResult.authorized) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status || 403, headers: corsHeaders });
+  }
+
   try {
     // Total registered users
     const usersSnapshot = await adminDb.collection('users').get();
@@ -39,26 +51,17 @@ export async function GET() {
         backendUrl: API_BASE_URL,
         timestamp: new Date().toISOString(),
       },
-      {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-      }
+      { headers: corsHeaders }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch admin stats' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to fetch admin stats' }, { status: 500, headers: corsHeaders });
   }
 }
 
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
+    headers: corsHeaders,
   });
 }
+

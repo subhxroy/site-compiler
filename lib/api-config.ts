@@ -24,8 +24,9 @@ export function getApiUrl(path: string): string {
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // On localhost, always use relative paths so exports run 100% locally
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+  // In the browser, always use relative paths (/api/...) so Next.js API routes on Netlify
+  // proxy requests server-to-server to the Render backend, preventing CORS and direct fetch errors.
+  if (typeof window !== 'undefined') {
     return cleanPath;
   }
 

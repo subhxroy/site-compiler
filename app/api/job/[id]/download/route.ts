@@ -37,6 +37,10 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
+  if (!job.paymentApproved) {
+    return NextResponse.json({ error: 'Export pending admin payment approval' }, { status: 403 });
+  }
+
   const zipPath = path.resolve(process.cwd(), 'exports', id, `${id}.zip`);
   const legacyZipPath = path.resolve(process.cwd(), 'exports', id, 'download.zip');
   const targetZip = fs.existsSync(zipPath) ? zipPath : fs.existsSync(legacyZipPath) ? legacyZipPath : null;

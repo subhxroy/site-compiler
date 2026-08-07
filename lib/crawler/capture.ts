@@ -155,6 +155,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     '--disable-dev-shm-usage',
     '--disable-accelerated-2d-canvas',
     '--disable-gpu',
+    '--single-process',
+    '--no-zygote',
     '--disable-blink-features=AutomationControlled',
   ];
 
@@ -170,7 +172,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     browser = await chromium.launch({
       headless: true,
       ...(execPath && { executablePath: execPath }),
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process', '--no-zygote'],
     });
   }
   const context = await browser.newContext({

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getApiUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
+import { PaywallModal } from '@/components/paywall-modal';
 
 type OutputFormat = 'html' | 'react' | 'nextjs';
 type JobStatus =
@@ -26,6 +27,10 @@ interface JobState {
   logs: string[];
   downloadUrl?: string;
   zipSizeKb?: number;
+  pageCount?: number;
+  amount?: number;
+  paymentSubmitted?: boolean;
+  paymentApproved?: boolean;
   screenshots?: { desktop: string; tablet: string; mobile: string };
   error?: string;
 }
@@ -189,6 +194,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [tab,      setTab]      = useState<'preview' | 'logs'>('preview');
   const [savedToFirebase, setSavedToFirebase] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Restore job state on page load or refresh
@@ -342,6 +348,22 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
       {/* Auth Modal Triggered on Unauthenticated Export Attempt */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
 
+      {/* Paywall Modal for Payment Verification */}
+      {job && (
+        <PaywallModal
+          isOpen={isPaywallOpen}
+          onClose={() => setIsPaywallOpen(false)}
+          jobId={job.id}
+          url={job.url}
+          pageCount={job.pageCount || 1}
+          amount={job.amount || 20}
+          userEmail={user?.email || undefined}
+          onPaymentSubmitted={() => {
+            setJob((prev) => (prev ? { ...prev, paymentSubmitted: true } : null));
+          }}
+        />
+      )}
+
       {/* ── Hero Section ─────────────────────────────────────────────────── */}
       <section className="relative pt-28 sm:pt-36 pb-16 sm:pb-24 px-4 sm:px-6 overflow-hidden">
         
@@ -484,16 +506,34 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                 {job.status === 'completed' && job.downloadUrl && (
                   <>
                     {job.zipSizeKb && (
-                      <span className="font-mono text-xs text-[#6a6b6c]">{job.zipSizeKb} KB</span>
+                      <span className="font-mono text-xs text-[#6a6b6c]">{job.zipSizeKb} KB ({job.pageCount || 1} pages)</span>
                     )}
-                    <a
-                      href={getApiUrl(job.downloadUrl)}
-                      download
-                      className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2"
-                    >
-                      <Icon.Download />
-                      <span>Download ZIP</span>
-                    </a>
+                    {job.paymentApproved ? (
+                      <a
+                        href={getApiUrl(job.downloadUrl)}
+                        download
+                        className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+                      >
+                        <Icon.Download />
+                        <span>Download ZIP (Approved)</span>
+                      </a>
+                    ) : job.paymentSubmitted ? (
+                      <button
+                        onClick={() => setIsPaywallOpen(true)}
+                        className="px-4 py-2 text-xs font-medium rounded-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Icon.Spinner size={14} />
+                        <span>Payment Submitted — Awaiting Admin Approval</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setIsPaywallOpen(true)}
+                        className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-[#ff6363] text-black font-semibold hover:bg-[#ff7575] cursor-pointer"
+                      >
+                        <Icon.Download />
+                        <span>Pay & Unlock Download (₹{job.amount || 20})</span>
+                      </button>
+                    )}
                   </>
                 )}
                 {!isActive && (

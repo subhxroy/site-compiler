@@ -93,16 +93,22 @@ export async function processExportJob(jobId: string): Promise<void> {
     const stat = statSync(zipPath);
     const zipSizeKb = Math.round(stat.size / 1024);
 
+    const pageCount = (crawlResult.pages && crawlResult.pages.length) || 1;
+    const amount = Math.max(20, Math.ceil(pageCount / 10) * 20);
+
     updateJob(
       jobId,
       {
         status: 'completed',
-        progressMessage: `Export complete — ${zipSizeKb} KB ZIP ready for download (Expires in 10 mins).`,
+        progressMessage: `Export complete — ${pageCount} page(s) captured (₹${amount}). ${zipSizeKb} KB ZIP ready for approval.`,
         completedAt: Date.now(),
         downloadUrl: `/api/job/${jobId}/download`,
         zipSizeKb,
+        pageCount,
+        amount,
+        paymentApproved: false,
       },
-      `Export completed — ${zipSizeKb} KB. Package will auto-delete in 10 minutes.`
+      `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
     );
   } catch (err: any) {
     console.error(`[Job ${jobId}] Failed:`, err);
