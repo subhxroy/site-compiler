@@ -231,7 +231,74 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       try {
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         
-        try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
+        try { await page.waitForLoadState('networkidle', { timeout: 2000 }); } catch {}
+
+        // ── Agentic Engine: Smart Preloader Detection & Hydration Wait ─────
+        log(`[Agent Engine] Inspecting DOM & awaiting preloader resolution on ${currentUrl}...`);
+
+        try {
+          await page.evaluate(async () => {
+            const startTime = Date.now();
+            const maxWait = 7500; // Wait up to 7.5s max for GSAP / Framer preloader animations
+
+            const preloaderSelectors = [
+              '.loader-wrap', '.loader-wrap-heading', '.preloader', '#preloader',
+              '.loader', '#loader', '[class*="loader-wrap"]', '[class*="preloader"]',
+              '[id*="preloader"]', '[class*="splash"]', '[class*="intro-loader"]',
+              '[id*="splash"]', '.page-loader', '#page-loader', '.loading-screen',
+              '#loading-screen', '.framer-preloader', '#framer-preloader'
+            ];
+
+            const isPreloaderActive = () => {
+              for (const sel of preloaderSelectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                  const style = window.getComputedStyle(el);
+                  if (style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.05) {
+                    return true;
+                  }
+                }
+              }
+              return false;
+            };
+
+            // Poll until preloader exits and anchors/main content are present
+            while (Date.now() - startTime < maxWait) {
+              const anchorsCount = document.querySelectorAll('a[href]').length;
+              const mainEl = document.querySelector('main, #main, article, [data-framer-component], .content, #content');
+              const mainVisible = mainEl ? window.getComputedStyle(mainEl).display !== 'none' && parseFloat(window.getComputedStyle(mainEl).opacity || '1') > 0.1 : true;
+
+              if (!isPreloaderActive() && anchorsCount > 0 && mainVisible) {
+                break;
+              }
+              await new Promise((r) => setTimeout(r, 250));
+            }
+
+            // Forced Preloader Bypass: Force-hide lingering preloader overlays & unhide main content
+            preloaderSelectors.forEach((sel) => {
+              document.querySelectorAll(sel).forEach((el) => {
+                try {
+                  (el as HTMLElement).style.display = 'none';
+                  (el as HTMLElement).style.opacity = '0';
+                  (el as HTMLElement).style.visibility = 'hidden';
+                  (el as HTMLElement).style.pointerEvents = 'none';
+                  (el as HTMLElement).style.zIndex = '-9999';
+                } catch {}
+              });
+            });
+
+            // Unhide main content container if hidden by GSAP/CSS
+            document.querySelectorAll('main, #main, article, [data-framer-component], .content, #content').forEach((el) => {
+              try {
+                (el as HTMLElement).style.opacity = '1';
+                (el as HTMLElement).style.visibility = 'visible';
+                (el as HTMLElement).style.display = 'block';
+              } catch {}
+            });
+          });
+        } catch {}
+
+        await page.waitForTimeout(600);
 
         // Dismiss cookie/GDPR banners
         const cookieDismissSelectors = [
@@ -259,18 +326,18 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           await page.evaluate(async () => {
             const maxScroll = Math.min(
               Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-              4000
+              5000
             );
-            for (let y = 0; y < maxScroll; y += 500) {
+            for (let y = 0; y < maxScroll; y += 400) {
               window.scrollTo({ top: y, behavior: 'instant' });
-              await new Promise((r) => setTimeout(r, 40));
+              await new Promise((r) => setTimeout(r, 50));
             }
             window.scrollTo(0, 0);
-            await new Promise((r) => setTimeout(r, 150));
+            await new Promise((r) => setTimeout(r, 200));
           });
         } catch {}
 
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(500);
 
         // Extract internal links for subpage crawling
         let internalLinks: string[] = [];
@@ -281,12 +348,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             anchors.forEach((el) => {
               try {
                 const a = el as HTMLAnchorElement;
-                const hrefProp = a.href;
+                const hrefProp = a.getAttribute('href') || a.href;
                 if (!hrefProp || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
-                if (a.hostname === targetHost && (a.protocol === 'http:' || a.protocol === 'https:')) {
-                  let p = a.pathname || '/';
+                
+                const absUrl = new URL(hrefProp, window.location.href);
+                if (absUrl.hostname === targetHost && (absUrl.protocol === 'http:' || absUrl.protocol === 'https:')) {
+                  let p = absUrl.pathname || '/';
                   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-                  const norm = `${a.protocol}//${a.host}${p}`;
+                  const norm = `${absUrl.protocol}//${absUrl.host}${p}`;
                   links.add(norm);
                 }
               } catch {}
@@ -307,6 +376,22 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             }
           }
         }
+
+        // Clean up blocking preloader elements before DOM HTML snapshot
+        try {
+          await page.evaluate(() => {
+            const preloaderSelectors = [
+              '.loader-wrap', '.loader-wrap-heading', '.preloader', '#preloader',
+              '.loader', '#loader', '[class*="loader-wrap"]', '[class*="preloader"]',
+              '[id*="preloader"]', '[class*="splash"]', '[class*="intro-loader"]'
+            ];
+            preloaderSelectors.forEach((sel) => {
+              document.querySelectorAll(sel).forEach((el) => {
+                try { el.remove(); } catch {}
+              });
+            });
+          });
+        } catch {}
 
         // Capture page DOM HTML
         const pageHtml = await page.content();
