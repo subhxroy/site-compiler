@@ -184,7 +184,7 @@ const viewportIcons = {
 };
 
 export default function SiteCompilerPage({ faqs }: { faqs: { question: string; answer: string }[] }) {
-  const { user, saveUserExport } = useAuth();
+  const { user, isAdmin, saveUserExport } = useAuth();
   const [url,      setUrl]      = useState('');
   const [format,   setFormat]   = useState<OutputFormat>('html');
   const [loading,  setLoading]  = useState(false);
@@ -508,14 +508,14 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     {job.zipSizeKb && (
                       <span className="font-mono text-xs text-[#6a6b6c]">{job.zipSizeKb} KB ({job.pageCount || 1} pages)</span>
                     )}
-                    {job.paymentApproved ? (
+                    {job.paymentApproved || isAdmin ? (
                       <a
                         href={getApiUrl(job.downloadUrl)}
                         download
                         className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
                       >
                         <Icon.Download />
-                        <span>Download ZIP (Approved)</span>
+                        <span>Download ZIP {isAdmin ? '(Admin Free Pass)' : '(Approved)'}</span>
                       </a>
                     ) : job.paymentSubmitted ? (
                       <button

@@ -25,6 +25,8 @@ export interface UserExportRecord {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isAdmin: boolean;
+  userRole: string;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string) => Promise<void>;
@@ -37,6 +39,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  isAdmin: false,
+  userRole: 'user',
   signInWithGoogle: async () => {},
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
@@ -49,6 +53,8 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState('user');
 
   useEffect(() => {
     // Safety fallback timer to prevent infinite loading spinner if Firebase auth hangs
@@ -56,41 +62,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }, 2500);
 
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (currentUser: User | null) => {
-        clearTimeout(timer);
-        setUser(currentUser);
-        setLoading(false);
+    let unsubscribe = () => {};
 
-        if (currentUser) {
-          // Sync user profile to Next.js API route (/api/user/sync)
-          try {
-            await fetch('/api/user/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                uid: currentUser.uid,
-                email: currentUser.email,
-                displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-                photoURL: currentUser.photoURL || null,
-              }),
-            }).catch(() => {});
-          } catch {
-            // Silently handle offline/network sync errors
+    try {
+      unsubscribe = onAuthStateChanged(
+        auth,
+        async (currentUser: User | null) => {
+          clearTimeout(timer);
+          setUser(currentUser);
+          setLoading(false);
+
+          if (currentUser) {
+            // Check email domain/pattern for admin fallback
+            const emailLower = (currentUser.email || '').toLowerCase();
+            const isAdminFallback = emailLower.includes('subhroy') || emailLower.includes('whysaurjya') || emailLower.includes('admin');
+            if (isAdminFallback) {
+              setIsAdmin(true);
+              setUserRole('admin');
+            }
+
+            // Sync user profile to Next.js API route (/api/user/sync)
+            try {
+              const res = await fetch('/api/user/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  uid: currentUser.uid,
+                  email: currentUser.email,
+                  displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+                  photoURL: currentUser.photoURL || null,
+                }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.isAdmin || data.role === 'admin' || isAdminFallback) {
+                  setIsAdmin(true);
+                  setUserRole('admin');
+                } else {
+                  setIsAdmin(false);
+                  setUserRole(data.role || 'user');
+                }
+              }
+            } catch {
+              // Silently handle offline/network sync errors
+            }
+          } else {
+            setIsAdmin(false);
+            setUserRole('user');
           }
+        },
+        (error) => {
+          clearTimeout(timer);
+          // Catch Database is closing/hidden errors silently without breaking React tree
+          if (!error?.message?.includes('closing')) {
+            console.error('[Firebase Auth Error]', error);
+          }
+          setLoading(false);
         }
-      },
-      (error) => {
-        clearTimeout(timer);
-        console.error('[Firebase Auth Error]', error);
-        setLoading(false);
-      }
-    );
+      );
+    } catch (err: any) {
+      clearTimeout(timer);
+      setLoading(false);
+    }
 
     return () => {
       clearTimeout(timer);
-      unsubscribe();
+      try { unsubscribe(); } catch {}
     };
   }, []);
 
@@ -108,6 +145,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOutUser = async () => {
     await firebaseSignOut(auth);
+    setIsAdmin(false);
+    setUserRole('user');
   };
 
   const saveUserExport = async (exportData: UserExportRecord) => {
@@ -138,8 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getIdToken = async (): Promise<string | null> => {
-    if (!auth.currentUser) return null;
-    return await auth.currentUser.getIdToken(true);
+    try {
+      if (!auth.currentUser) return null;
+      return await auth.currentUser.getIdToken(true);
+    } catch {
+      return null;
+    }
   };
 
   return (
@@ -147,6 +190,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         loading,
+        isAdmin,
+        userRole,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,

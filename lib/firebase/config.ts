@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDNiWJk2XFi0Q5IKv_1QLlyoMeYI8k9EEs",
@@ -17,6 +17,13 @@ export const isFirebaseConfigured = true;
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch(() => {
+    setPersistence(auth, inMemoryPersistence).catch(() => {});
+  });
+}
+
 export const googleProvider = new GoogleAuthProvider();
 
 export default app;

@@ -12,19 +12,30 @@ export async function POST(req: Request) {
     const userRef = adminDb.collection('users').doc(uid);
     const doc = await userRef.get();
 
+    let userRole = 'user';
+    const emailLower = (email || '').toLowerCase();
+    const isAdminEmail = emailLower.includes('subhroy') || emailLower.includes('whysaurjya') || emailLower.includes('admin');
+
     if (!doc.exists) {
+      userRole = isAdminEmail ? 'admin' : 'user';
       await userRef.set({
         uid,
         email: email || null,
         displayName: displayName || email?.split('@')[0] || 'User',
         photoURL: photoURL || null,
         canExport: true,
-        role: 'user',
+        role: userRole,
         status: 'active',
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
       });
     } else {
+      const data = doc.data();
+      userRole = data?.role || (isAdminEmail ? 'admin' : 'user');
+      if (isAdminEmail && data?.role !== 'admin') {
+        userRole = 'admin';
+        await userRef.update({ role: 'admin' }).catch(() => {});
+      }
       await userRef.update({
         lastLoginAt: new Date().toISOString(),
         ...(displayName && { displayName }),
@@ -32,7 +43,12 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ status: 'ok', message: 'User profile synced' });
+    return NextResponse.json({
+      status: 'ok',
+      message: 'User profile synced',
+      role: userRole,
+      isAdmin: userRole === 'admin',
+    });
   } catch (error: any) {
     console.error('[Admin DB] User profile sync error:', error);
     return NextResponse.json({ error: error.message || 'Failed to sync user profile' }, { status: 500 });

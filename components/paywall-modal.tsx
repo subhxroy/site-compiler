@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { useAuth } from '@/lib/firebase/auth-context';
 
 interface PaywallModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export function PaywallModal({
   userEmail,
   onPaymentSubmitted,
 }: PaywallModalProps) {
+  const { isAdmin } = useAuth();
   const [senderAccount, setSenderAccount] = useState('');
   const [utrNumber, setUtrNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -107,6 +109,27 @@ export function PaywallModal({
             Scan dynamic QR or tap to pay <strong className="text-white">₹{amount} INR</strong> to unlock your {pageCount} page(s) ZIP bundle.
           </p>
         </div>
+
+        {isAdmin && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 text-center space-y-2">
+            <div className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
+              ⚡ Admin Account — Free Export Pass
+            </div>
+            <p className="text-xs text-[#9c9c9d]">
+              You are logged in as an Administrator. You do not need to pay to download website export ZIPs.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onPaymentSubmitted();
+                onClose();
+              }}
+              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-all shadow-lg cursor-pointer"
+            >
+              Unlock Free Download (Admin Pass)
+            </button>
+          </div>
+        )}
 
         {/* Dynamic GPay-style UPI Card */}
         <div className="bg-[#17181c] border border-[#2e2f33] rounded-2xl p-5 space-y-4 text-center shadow-inner">
