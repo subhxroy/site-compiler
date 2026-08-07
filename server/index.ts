@@ -2,15 +2,26 @@ if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { createJob, getJob } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
+import { validateUrlForSsrf } from '../lib/security/ssrf';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// ── Security Headers Middleware ─────────────────────────────────────────────
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // CORS configuration - Allow all origins dynamically (Netlify, Vercel, localhost, custom domains)
 app.use(
@@ -23,6 +34,15 @@ app.use(
 );
 
 app.use(express.json());
+
+// ── Express Rate Limiting (15 requests per minute for exports) ───────────────
+const exportRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', message: 'Rate limit exceeded. Please wait 60 seconds before creating a new export.' },
+});
 
 // ── Render Health Router Endpoint ─────────────────────────────────────────────
 const healthHandler = (_req: Request, res: Response) => {
@@ -40,24 +60,18 @@ app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
 // ── Export Endpoint ────────────────────────────────────────────────────────────
-app.post('/api/export', (req: Request, res: Response) => {
+app.post('/api/export', exportRateLimiter, (req: Request, res: Response) => {
   try {
     const { url, format = 'nextjs' } = req.body || {};
 
-    if (!url || typeof url !== 'string') {
-      res.status(400).json({ error: 'Valid URL is required' });
+    const ssrfCheck = validateUrlForSsrf(url);
+    if (!ssrfCheck.valid || !ssrfCheck.url) {
+      res.status(400).json({ error: ssrfCheck.reason || 'Invalid or forbidden target URL' });
       return;
     }
 
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      res.status(400).json({ error: 'Invalid URL format' });
-      return;
-    }
-
-    const job = createJob(parsedUrl.href, format);
+    const safeUrl = ssrfCheck.url;
+    const job = createJob(safeUrl, format);
 
     // Trigger background export process without blocking HTTP response
     processExportJob(job.id).catch((err) => {

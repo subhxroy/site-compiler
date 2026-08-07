@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getJob, updateJob } from '@/lib/jobs/store';
 import { adminDb } from '@/lib/firebase/admin';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 export async function POST(req: Request) {
   try {
+    // Rate Limit Protection (10 submissions per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, 10, 5 * 60 * 1000);
+    if (!rateLimit.allowed && rateLimit.response) {
+      return rateLimit.response;
+    }
+
     const body = await req.json();
     const { jobId, url, pageCount, amount, senderAccount, utrNumber, userEmail } = body || {};
 

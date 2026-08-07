@@ -42,6 +42,7 @@ export const metadata: Metadata = {
 };
 
 import { AuthProvider } from "@/lib/firebase/auth-context";
+import { PostHogProvider } from "@/lib/posthog";
 
 export default function RootLayout({
   children,
@@ -64,13 +65,15 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full antialiased bg-[#040506] text-white flex flex-col selection:bg-[#ff6363]/30 selection:text-white">
-        <AuthProvider>
-          <Navbar />
-          <div className="flex-1">
-            {children}
-          </div>
-          <Footer />
-        </AuthProvider>
+        <PostHogProvider>
+          <AuthProvider>
+            <Navbar />
+            <div className="flex-1">
+              {children}
+            </div>
+            <Footer />
+          </AuthProvider>
+        </PostHogProvider>
       </body>
     </html>
   );

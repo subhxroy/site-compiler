@@ -1,22 +1,27 @@
 import { NextResponse } from 'next/server';
 import { createJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
+import { validateUrlForSsrf } from '@/lib/security/ssrf';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 export async function POST(req: Request) {
   try {
+    // 1. Rate Limit Protection (15 exports per minute per IP)
+    const rateLimit = checkRateLimit(req, 15, 60000);
+    if (!rateLimit.allowed && rateLimit.response) {
+      return rateLimit.response;
+    }
+
     const body = await req.json();
     const { url, format = 'nextjs' } = body;
 
-    if (!url || typeof url !== 'string') {
-      return NextResponse.json({ error: 'Valid URL is required' }, { status: 400 });
+    // 2. Anti-SSRF & Input URL Validation
+    const ssrfCheck = validateUrlForSsrf(url);
+    if (!ssrfCheck.valid || !ssrfCheck.url) {
+      return NextResponse.json({ error: ssrfCheck.reason || 'Invalid or forbidden target URL' }, { status: 400 });
     }
 
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
-    }
+    const safeUrl = ssrfCheck.url;
 
     // Proxy request to Express/Render backend if configured
     if (API_BASE_URL) {
@@ -24,7 +29,7 @@ export async function POST(req: Request) {
         const backendRes = await fetch(`${API_BASE_URL}/api/export`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: parsedUrl.href, format }),
+          body: JSON.stringify({ url: safeUrl, format }),
         });
         const data = await backendRes.json();
         return NextResponse.json(data, { status: backendRes.status });
@@ -38,7 +43,7 @@ export async function POST(req: Request) {
     }
 
     // Local Node.js execution fallback
-    const job = createJob(parsedUrl.href, format);
+    const job = createJob(safeUrl, format);
     
     // Dynamically import the heavy processor (Playwright + generators) so this
     // serverless function never bundles/loads it on the Netlify edge.
