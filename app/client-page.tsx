@@ -603,12 +603,12 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               </div>
 
               {tab === 'preview' ? (
-                <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] flex items-center justify-center bg-[#040506]">
+                <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] max-h-[550px] overflow-y-auto bg-[#040506] scrollbar-thin scrollbar-thumb-[#363739]">
                   {job.screenshots ? (
                     <img
                       src={getApiUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
                       alt={`${viewport} screenshot`}
-                      className="max-h-[500px] w-auto rounded-[6px] border border-[#2f3031] object-contain shadow-xl"
+                      className="w-full h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}

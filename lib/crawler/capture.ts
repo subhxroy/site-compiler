@@ -196,7 +196,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
   });
 
-  const page = await context.newPage();
+  let page = await context.newPage();
 
   // Track network assets
   const networkAssetUrls = new Set<string>();
@@ -218,6 +218,11 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     let pageCount = 0;
 
     while (pagesToCrawl.length > 0 && pageCount < maxPages) {
+      if (page.isClosed()) {
+        log('[Browser Engine] Re-opening closed page instance...');
+        page = await context.newPage();
+      }
+
       const rawCurrentUrl = pagesToCrawl.shift()!;
       const currentUrl = normalizeUrl(rawCurrentUrl);
 
@@ -339,44 +344,6 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         await page.waitForTimeout(500);
 
-        // Extract internal links for subpage crawling
-        let internalLinks: string[] = [];
-        try {
-          internalLinks = await page.evaluate((targetHost) => {
-            const links = new Set<string>();
-            const anchors = document.querySelectorAll('a[href]');
-            anchors.forEach((el) => {
-              try {
-                const a = el as HTMLAnchorElement;
-                const hrefProp = a.getAttribute('href') || a.href;
-                if (!hrefProp || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
-                
-                const absUrl = new URL(hrefProp, window.location.href);
-                if (absUrl.hostname === targetHost && (absUrl.protocol === 'http:' || absUrl.protocol === 'https:')) {
-                  let p = absUrl.pathname || '/';
-                  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-                  const norm = `${absUrl.protocol}//${absUrl.host}${p}`;
-                  links.add(norm);
-                }
-              } catch {}
-            });
-            return [...links];
-          }, targetHost);
-        } catch {}
-
-        log(`Discovered ${internalLinks.length} internal links on ${currentUrl}`);
-
-        for (const rawLink of internalLinks) {
-          const link = normalizeUrl(rawLink);
-          const isExternalDomainInPath = /\/(www\.|linkedin\.com|twitter\.com|facebook\.com|instagram\.com|github\.com|youtube\.com)/i.test(link);
-          if (!visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
-            if (!link.match(/\.(png|jpg|jpeg|gif|webp|svg|pdf|zip|mp4|css|js)($|\?)/i)) {
-              pagesToCrawl.push(link);
-              log(`Queued subpage: ${link}`);
-            }
-          }
-        }
-
         // Clean up blocking preloader elements before DOM HTML snapshot
         try {
           await page.evaluate(() => {
@@ -401,6 +368,63 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         if (isEntry) {
           fs.writeFileSync(path.join(/* turbopackIgnore: true */ rawDir, 'page.html'), pageHtml, 'utf-8');
+        }
+
+        // Extract internal links for subpage crawling
+        let internalLinks: string[] = [];
+        try {
+          internalLinks = await page.evaluate((targetHost) => {
+            const links = new Set<string>();
+            const cleanHost = (h: string) => h.toLowerCase().replace(/^www\./, '');
+            const normalizedTarget = cleanHost(targetHost);
+
+            document.querySelectorAll('a[href]').forEach((el) => {
+              try {
+                const a = el as HTMLAnchorElement;
+                const hrefProp = a.getAttribute('href') || a.href;
+                if (!hrefProp || hrefProp.startsWith('#') || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
+                
+                const absUrl = new URL(hrefProp, window.location.href);
+                if (cleanHost(absUrl.hostname) === normalizedTarget && (absUrl.protocol === 'http:' || absUrl.protocol === 'https:')) {
+                  let p = absUrl.pathname || '/';
+                  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+                  const norm = `${absUrl.protocol}//${absUrl.host}${p}`;
+                  links.add(norm);
+                }
+              } catch {}
+            });
+            return [...links];
+          }, targetHost);
+        } catch {}
+
+        // Fallback: Regex scan captured HTML source for relative links (e.g. href="/about", href="/portfolio")
+        const linkRegex = /href=["'](\/[a-zA-Z0-9_\-\/]+)["']/gi;
+        let match;
+        while ((match = linkRegex.exec(pageHtml)) !== null) {
+          const relPath = match[1];
+          if (relPath && relPath !== '/' && !relPath.startsWith('//')) {
+            try {
+              const fullUrl = normalizeUrl(new URL(relPath, currentUrl).href);
+              const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
+              const tHost = targetHost.toLowerCase().replace(/^www\./, '');
+              if (uHost === tHost && !internalLinks.includes(fullUrl)) {
+                internalLinks.push(fullUrl);
+              }
+            } catch {}
+          }
+        }
+
+        log(`Discovered ${internalLinks.length} internal links on ${currentUrl}`);
+
+        for (const rawLink of internalLinks) {
+          const link = normalizeUrl(rawLink);
+          const isExternalDomainInPath = /\/(www\.|linkedin\.com|twitter\.com|facebook\.com|instagram\.com|github\.com|youtube\.com)/i.test(link);
+          if (!visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
+            if (!link.match(/\.(png|jpg|jpeg|gif|webp|svg|pdf|zip|mp4|css|js)($|\?)/i)) {
+              pagesToCrawl.push(link);
+              log(`Queued subpage: ${link}`);
+            }
+          }
         }
 
         // Extract Page Metadata
