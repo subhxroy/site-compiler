@@ -199,7 +199,7 @@ export async function createJobZip(options: ZipOptions): Promise<string> {
     throw new Error(`Output folder not found: ${sourceFolder}`);
   }
 
-  const zipPath = path.join(exportsDir, 'download.zip');
+  const zipPath = path.join(exportsDir, `${jobId}.zip`);
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
   // 1. Build file listing for README

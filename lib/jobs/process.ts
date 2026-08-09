@@ -110,16 +110,17 @@ export async function processExportJob(jobId: string): Promise<void> {
       },
       `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`[Job ${jobId}] Failed:`, err);
+    const errMsg = (err as Error).message || String(err);
     updateJob(
       jobId,
       {
         status: 'failed',
-        error: err.message || String(err),
-        progressMessage: `Export failed: ${err.message || String(err)}`,
+        error: errMsg,
+        progressMessage: `Export failed: ${errMsg}`,
       },
-      `ERROR: ${err.message || String(err)}`
+      `ERROR: ${errMsg}`
     );
   }
 }

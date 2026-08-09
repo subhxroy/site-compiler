@@ -11,10 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to full commit SHAs (supply-chain hardening — mutable tags like
+      # @v4 can be silently repointed by the action owner).
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832bf12 # v4.4.0
         with:
           node-version: 20
           cache: 'npm'

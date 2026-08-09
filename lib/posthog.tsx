@@ -35,7 +35,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 }
 
 // Track Analytics Events
-export function trackEvent(eventName: string, properties?: Record<string, any>) {
+export function trackEvent(eventName: string, properties?: Record<string, unknown>) {
   if (typeof window !== 'undefined' && posthog.__loaded) {
     try {
       posthog.capture(eventName, properties);

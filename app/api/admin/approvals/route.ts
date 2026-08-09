@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyAdminRequest } from '@/lib/firebase/verify-admin';
-import { updateJob, getJob } from '@/lib/jobs/store';
+import { updateJob } from '@/lib/jobs/store';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,15 +22,15 @@ export async function GET(req: Request) {
       .limit(100)
       .get();
 
-    const approvals: any[] = [];
+    const approvals: Array<{ id: string } & Record<string, unknown>> = [];
     snapshot.forEach((doc) => {
       approvals.push({ id: doc.id, ...doc.data() });
     });
 
     return NextResponse.json({ approvals }, { headers: corsHeaders });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin Approvals API] Error fetching approvals:', error);
-    return NextResponse.json({ error: error.message || 'Failed to fetch export approvals' }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ error: (error as Error).message || 'Failed to fetch export approvals' }, { status: 500, headers: corsHeaders });
   }
 }
 
@@ -73,9 +73,9 @@ export async function POST(req: Request) {
       { status: 'ok', message: `Export payment ${newStatus} successfully`, jobId, isApproved },
       { headers: corsHeaders }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin Approvals API] Error processing approval:', error);
-    return NextResponse.json({ error: error.message || 'Failed to process approval' }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ error: (error as Error).message || 'Failed to process approval' }, { status: 500, headers: corsHeaders });
   }
 }
 

@@ -7,11 +7,12 @@
  *   3. Admin Portal --> http://localhost:3002
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const { spawn } = require('child_process');
 const path = require('path');
 
 const isWindows = process.platform === 'win32';
-const npmCmd = isWindows ? 'npm.cmd' : 'npm';
 const npxCmd = isWindows ? 'npx.cmd' : 'npx';
 
 console.log('\x1b[36m%s\x1b[0m', '===============================================================');
@@ -22,7 +23,7 @@ function runService(name, command, args, color, cwd = process.cwd()) {
   const child = spawn(command, args, {
     cwd,
     stdio: 'pipe',
-    shell: true,
+    shell: false,
     env: { ...process.env, PORT: name === 'Express Backend' ? '3001' : undefined },
   });
 

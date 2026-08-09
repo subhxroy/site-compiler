@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getJob, updateJob } from '@/lib/jobs/store';
+import { updateJob } from '@/lib/jobs/store';
 import { adminDb } from '@/lib/firebase/admin';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { errorMessage } from '@/lib/errors';
 
 export async function POST(req: Request) {
   try {
@@ -12,13 +13,18 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { jobId, url, pageCount, amount, senderAccount, utrNumber, userEmail } = body || {};
+    const { jobId, url, pageCount, senderAccount, utrNumber, userEmail } = body || {};
 
     if (!jobId || !utrNumber || !senderAccount) {
       return NextResponse.json({ error: 'Job ID, Sender Account, and UTR Number are required' }, { status: 400 });
     }
 
-    // Update in-memory job store
+    // Never trust client-supplied amount. Recompute from a clamped pageCount so
+    // an attacker can't under-report the price to ₹1 in the approval record.
+    const safePageCount = Math.min(Math.max(1, Math.floor(Number(pageCount) || 1)), 100000);
+    const amount = Math.max(20, Math.ceil(safePageCount / 10) * 20);
+
+    // Update in-memory job store (UTR is not logged/returned to the client)
     updateJob(jobId, {
       paymentSubmitted: true,
       paymentApproved: false,
@@ -26,19 +32,20 @@ export async function POST(req: Request) {
       utrNumber,
       paymentSubmittedAt: Date.now(),
       userEmail: userEmail || 'Anonymous',
-    }, `Payment submitted (UTR: ${utrNumber}) — Awaiting Admin Approval`);
+    }, `Payment submitted — Awaiting Admin Approval`);
 
     // Record approval request in Firestore
     try {
       await adminDb.collection('export_approvals').doc(jobId).set({
         jobId,
-        url: url || '',
-        pageCount: pageCount || 1,
-        amount: amount || 20,
-        senderAccount,
-        utrNumber,
-        userEmail: userEmail || 'Anonymous',
+        url: String(url || '').slice(0, 2048),
+        pageCount: safePageCount,
+        amount,
+        senderAccount: String(senderAccount).slice(0, 256),
+        utrNumber: String(utrNumber).slice(0, 256),
+        userEmail: String(userEmail || 'Anonymous').slice(0, 256),
         status: 'pending',
+        paymentSubmitted: true,
         paymentApproved: false,
         createdAt: Date.now(),
         submittedAt: new Date().toISOString(),
@@ -52,7 +59,7 @@ export async function POST(req: Request) {
       message: 'Payment verification submitted. Awaiting Admin Approval.',
       jobId,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to submit payment verification' }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

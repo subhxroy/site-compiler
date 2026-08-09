@@ -92,9 +92,9 @@ export default function AdminPortalPage() {
       if (usersData.users) setUsers(usersData.users);
       if (statsData) setStats(statsData);
       setIsVerifiedAdmin(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsVerifiedAdmin(false);
-      setFeedback({ type: 'error', message: 'Failed to connect to Admin API: ' + err.message });
+      setFeedback({ type: 'error', message: 'Failed to connect to Admin API: ' + (err as Error).message });
     } finally {
       setLoading(false);
     }
@@ -102,6 +102,7 @@ export default function AdminPortalPage() {
 
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAdminData();
     } else {
       setIsVerifiedAdmin(null);
@@ -115,8 +116,8 @@ export default function AdminPortalPage() {
     setAuthenticating(true);
     try {
       await signInWithEmail(email, password);
-    } catch (err: any) {
-      setAuthError(err.message || 'Login failed. Please check credentials.');
+    } catch (err: unknown) {
+      setAuthError((err as Error).message || 'Login failed. Please check credentials.');
     } finally {
       setAuthenticating(false);
     }
@@ -128,8 +129,8 @@ export default function AdminPortalPage() {
     setAuthenticating(true);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
-      setAuthError(err.message || 'Google authentication failed.');
+    } catch (err: unknown) {
+      setAuthError((err as Error).message || 'Google authentication failed.');
     } finally {
       setAuthenticating(false);
     }
@@ -162,8 +163,8 @@ export default function AdminPortalPage() {
         const data = await res.json();
         throw new Error(data.error || 'Failed to update permission');
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Error updating user permission' });
+    } catch (err: unknown) {
+      setFeedback({ type: 'error', message: (err as Error).message || 'Error updating user permission' });
     } finally {
       setUpdatingUid(null);
     }
@@ -190,8 +191,8 @@ export default function AdminPortalPage() {
         const data = await res.json();
         throw new Error(data.error || 'Failed to update role');
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Error updating user role' });
+    } catch (err: unknown) {
+      setFeedback({ type: 'error', message: (err as Error).message || 'Error updating user role' });
     } finally {
       setUpdatingUid(null);
     }
@@ -210,8 +211,8 @@ export default function AdminPortalPage() {
       } else {
         setFeedback({ type: 'error', message: 'Backend responded with status ' + res.status });
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: 'Backend ping failed: ' + err.message });
+    } catch (err: unknown) {
+      setFeedback({ type: 'error', message: 'Backend ping failed: ' + (err as Error).message });
     } finally {
       setPingingBackend(false);
     }
@@ -540,7 +541,7 @@ export default function AdminPortalPage() {
                       <td className="px-6 py-4">
                         <select
                           value={u.role}
-                          onChange={(e) => handleRoleChange(u.uid, e.target.value as any)}
+                          onChange={(e) => handleRoleChange(u.uid, e.target.value as 'user' | 'pro' | 'admin')}
                           disabled={updatingUid === u.uid}
                           className="bg-[#1b1c1e] border border-[#2f3031] text-xs text-white rounded px-2.5 py-1 font-mono outline-none cursor-pointer"
                         >

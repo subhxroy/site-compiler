@@ -24,8 +24,8 @@ export async function verifyAdminRequest(req: Request): Promise<AdminAuthResult>
     let decodedToken;
     try {
       decodedToken = await adminAuth.verifyIdToken(token);
-    } catch (err: any) {
-      console.error('[Admin Auth] Invalid Firebase ID Token:', err.message);
+    } catch (err: unknown) {
+      console.error('[Admin Auth] Invalid Firebase ID Token:', (err as Error).message);
       return { authorized: false, error: 'Invalid or expired Firebase authentication token', status: 401 };
     }
 
@@ -43,8 +43,8 @@ export async function verifyAdminRequest(req: Request): Promise<AdminAuthResult>
     }
 
     return { authorized: true, uid, email: decodedToken.email };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin Auth Error]:', error);
-    return { authorized: false, error: error.message || 'Internal authentication error', status: 500 };
+    return { authorized: false, error: (error as Error).message || 'Internal authentication error', status: 500 };
   }
 }

@@ -14,6 +14,8 @@
  *   PING_INTERVAL_MINUTES=5
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const https = require('https');
 const http = require('http');
 

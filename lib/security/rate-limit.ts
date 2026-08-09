@@ -30,8 +30,15 @@ export function checkRateLimit(
   limit = 20,
   windowMs = 60 * 1000
 ): { allowed: boolean; remaining: number; resetTime: number; response?: NextResponse } {
+  // Take the LAST x-forwarded-for entry: proxies/hosts append the real client
+  // IP at the end, while the first value is attacker-controlled and could
+  // otherwise be used to rotate past the rate limit.
+  const xff = (req.headers.get('x-forwarded-for') || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    xff[xff.length - 1] ||
     req.headers.get('x-real-ip') ||
     '127.0.0.1';
 

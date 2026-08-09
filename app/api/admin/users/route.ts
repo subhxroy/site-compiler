@@ -32,9 +32,9 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ users }, { headers: corsHeaders });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin API] Error fetching users:', error);
-    return NextResponse.json({ error: error.message || 'Failed to fetch users' }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ error: (error as Error).message || 'Failed to fetch users' }, { status: 500, headers: corsHeaders });
   }
 }
 
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'UID is required' }, { status: 400, headers: corsHeaders });
     }
 
-    const updates: Record<string, any> = {};
+    const updates: Record<string, unknown> = {};
     if (typeof canExport === 'boolean') updates.canExport = canExport;
     if (role) updates.role = role;
     if (status) updates.status = status;
@@ -63,9 +63,9 @@ export async function POST(req: Request) {
       { status: 'ok', message: 'User updated successfully', updates },
       { headers: corsHeaders }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin API] Error updating user:', error);
-    return NextResponse.json({ error: error.message || 'Failed to update user' }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ error: (error as Error).message || 'Failed to update user' }, { status: 500, headers: corsHeaders });
   }
 }
 

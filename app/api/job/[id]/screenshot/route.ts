@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
 import { API_BASE_URL } from '@/lib/api-config';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   req: Request,
@@ -10,6 +11,13 @@ export async function GET(
   const { id } = await params;
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type') || 'desktop';
+
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    return NextResponse.json({ error: 'Invalid job id' }, { status: 400 });
+  }
+  if (!['desktop', 'tablet', 'mobile'].includes(type)) {
+    return NextResponse.json({ error: 'Invalid viewport type' }, { status: 400 });
+  }
 
   if (API_BASE_URL) {
     try {
@@ -24,9 +32,9 @@ export async function GET(
           'Cache-Control': 'public, max-age=3600',
         },
       });
-    } catch (proxyError: any) {
+    } catch (proxyError) {
       return NextResponse.json(
-        { error: `Backend screenshot service unreachable: ${proxyError.message}` },
+        { error: `Backend screenshot service unreachable: ${errorMessage(proxyError)}` },
         { status: 502 }
       );
     }

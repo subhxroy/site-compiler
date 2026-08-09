@@ -1,6 +1,5 @@
 import postcss from 'postcss';
 import * as fs from 'fs';
-import * as path from 'path';
 import { ProcessedAssetMap } from './asset-pipeline';
 
 export interface CssRuleInfo {

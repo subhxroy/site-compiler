@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getJob } from '@/lib/jobs/store';
+import { getJob, toPublicJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
+import { getApprovalState } from '@/lib/firebase/approval-status';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   req: Request,
@@ -12,10 +14,20 @@ export async function GET(
     try {
       const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/status`);
       const data = await backendRes.json();
+      // The Render backend's in-memory job store never sees the payment state
+      // written on the Netlify side. Overlay the durable Firestore approval
+      // record so the client shows the correct pay/approved state in prod.
+      if (backendRes.ok && data && typeof data === 'object') {
+        const approval = await getApprovalState(id);
+        if (approval) {
+          data.paymentSubmitted = approval.paymentSubmitted;
+          data.paymentApproved = approval.paymentApproved;
+        }
+      }
       return NextResponse.json(data, { status: backendRes.status });
-    } catch (proxyError: any) {
+    } catch (proxyError) {
       return NextResponse.json(
-        { error: `Backend service unreachable: ${proxyError.message}` },
+        { error: `Backend service unreachable: ${errorMessage(proxyError)}` },
         { status: 502 }
       );
     }
@@ -27,5 +39,5 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  return NextResponse.json(job);
+  return NextResponse.json(toPublicJob(job));
 }

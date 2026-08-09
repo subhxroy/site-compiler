@@ -42,8 +42,15 @@ export interface JobState {
 // In-process job store
 const jobStore = new Map<string, JobState>();
 
-// 10-minute export auto-cleanup routine (600,000 ms)
-const TEN_MINUTES_MS = 10 * 60 * 1000;
+// Export package retention. Previously 10 minutes — too short for the
+// pay → admin-approve → download flow (approval routinely happens after the
+// purge, deleting the ZIP and causing "file didn't exist" on download).
+// Default 24 hours; override with EXPORT_RETENTION_MS.
+const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
+const RETENTION_MS = (() => {
+  const fromEnv = Number(process.env.EXPORT_RETENTION_MS);
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_RETENTION_MS;
+})();
 
 const ACTIVE_STATUSES = new Set<JobStatus>([
   'pending',
@@ -54,7 +61,7 @@ const ACTIVE_STATUSES = new Set<JobStatus>([
   'zipping',
 ]);
 
-export function cleanupOldExportJobs(maxAgeMs: number = TEN_MINUTES_MS): void {
+export function cleanupOldExportJobs(maxAgeMs: number = RETENTION_MS): void {
   try {
     const exportsDir = path.resolve(process.cwd(), 'exports');
     if (!fs.existsSync(exportsDir)) return;
@@ -74,7 +81,7 @@ export function cleanupOldExportJobs(maxAgeMs: number = TEN_MINUTES_MS): void {
         if (now - stats.mtimeMs > maxAgeMs) {
           fs.rmSync(fullPath, { recursive: true, force: true });
           jobStore.delete(entry.name);
-          console.log(`[Exports Garbage Collector] Purged 10-minute old export package: ${entry.name}`);
+          console.log(`[Exports Garbage Collector] Purged expired export package: ${entry.name}`);
         }
       } catch {}
     }
@@ -98,9 +105,9 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): Job
   };
   jobStore.set(jobId, job);
 
-  // Schedule automatic purging of server files after 10 minutes. Skip if the
-  // job is still running so a long crawl's export dir is never deleted mid-write;
-  // the mtime-based GC will pick it up once the job finishes.
+  // Schedule automatic purging of server files after the retention window.
+  // Skip if the job is still running so a long crawl's export dir is never
+  // deleted mid-write; the mtime-based GC will pick it up once the job finishes.
   setTimeout(() => {
     try {
       const job = jobStore.get(jobId);
@@ -108,10 +115,10 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): Job
       const exportDir = path.resolve(process.cwd(), 'exports', jobId);
       if (fs.existsSync(exportDir)) {
         fs.rmSync(exportDir, { recursive: true, force: true });
-        console.log(`[Exports Timer] Auto-deleted 10-min expired export: ${jobId}`);
+        console.log(`[Exports Timer] Auto-deleted expired export: ${jobId}`);
       }
     } catch {}
-  }, TEN_MINUTES_MS);
+  }, RETENTION_MS);
 
   return job;
 }
@@ -119,6 +126,34 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): Job
 export function getJob(jobId: string): JobState | undefined {
   cleanupOldExportJobs();
   return jobStore.get(jobId);
+}
+
+/**
+ * Job shape safe to expose to unauthenticated clients. Payment PII
+ * (UTR number, sender account, user email) is stripped so anyone who
+ * guesses/obtains a jobId cannot harvest other users' bank/identity data.
+ */
+export function toPublicJob(job: JobState) {
+  return {
+    id: job.id,
+    url: job.url,
+    format: job.format,
+    status: job.status,
+    progressMessage: job.progressMessage,
+    createdAt: job.createdAt,
+    completedAt: job.completedAt,
+    error: job.error,
+    downloadUrl: job.downloadUrl,
+    zipSizeKb: job.zipSizeKb,
+    fileCount: job.fileCount,
+    pageCount: job.pageCount,
+    amount: job.amount,
+    paymentSubmitted: job.paymentSubmitted,
+    paymentApproved: job.paymentApproved,
+    paymentSubmittedAt: job.paymentSubmittedAt,
+    screenshots: job.screenshots,
+    logs: (job.logs || []).map((line) => line.replace(/\bUTR[:\s]+[A-Za-z0-9]{4,}/gi, 'UTR: [redacted]')),
+  };
 }
 
 export function updateJob(jobId: string, updates: Partial<JobState>, logMsg?: string) {

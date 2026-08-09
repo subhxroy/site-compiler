@@ -1,8 +1,10 @@
-import { chromium } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
+import { validateUrlForSsrfAsync } from '../security/ssrf';
+import { stripPlatformWatermarks } from '../parser/dom-cleaner';
 
 // Set browser path to ./pw-browsers (project-relative, survives Render build→runtime)
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
@@ -43,7 +45,7 @@ function sanitizeFilename(urlStr: string, index: number, defaultExt: string): st
 function urlToHtmlFilename(urlStr: string, isEntry: boolean): string {
   try {
     const u = new URL(urlStr);
-    let p = u.pathname.replace(/\/$/, '');
+    const p = u.pathname.replace(/\/$/, '');
     if (!p || p === '' || p === '/' || isEntry) return 'index.html';
     const clean = p.replace(/^\//, '').replace(/\//g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
     return clean.endsWith('.html') ? clean : `${clean}.html`;
@@ -149,20 +151,23 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     log(`[Browser Engine] Located Playwright binary: ${execPath}`);
   }
 
+  // NOTE: --single-process / --no-zygote were removed — they destabilize Chromium
+  // on heavy SPA sites (Framer) by collapsing all renderers into one process.
+  // Locally they hard-crash the browser ~2s after load; on Render free tier they
+  // leave the page alive but with an empty DOM, so link discovery finds 0 anchors
+  // and only the home page gets captured. Multi-process is the stable default.
   const containerArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-accelerated-2d-canvas',
     '--disable-gpu',
-    '--single-process',
-    '--no-zygote',
     '--disable-blink-features=AutomationControlled',
   ];
 
-  let browser: any;
-  let context: any;
-  let page: any;
+  let browser!: Browser;
+  let context!: BrowserContext;
+  let page!: Page;
 
   // Track network assets. Attached to every freshly created page so the listener
   // survives browser relaunches (previously only the first page had it).
@@ -175,12 +180,12 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         ...(execPath && { executablePath: execPath }),
         args: containerArgs,
       });
-    } catch (launchErr: any) {
-      log(`[Browser Launch Warning] Standard launch failed: ${launchErr.message}. Attempting fallback...`);
+    } catch (launchErr) {
+      log(`[Browser Launch Warning] Standard launch failed: ${(launchErr as Error)?.message}. Attempting fallback...`);
       browser = await chromium.launch({
         headless: true,
         ...(execPath && { executablePath: execPath }),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process', '--no-zygote'],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
       });
     }
     context = await browser.newContext({
@@ -204,7 +209,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     });
 
     page = await context.newPage();
-    page.on('response', (resp: any) => {
+    page.on('response', (resp: Response) => {
       const reqUrl = resp.url();
       const ct = resp.headers()['content-type'] || '';
       if (ct.startsWith('image/') || ct.startsWith('font/') || ct.includes('video/') || ct.includes('svg')) {
@@ -228,8 +233,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     return page;
   };
 
-  const isBrowserCrashError = (err: any): boolean => {
-    const msg = String(err?.message || '');
+  const isBrowserCrashError = (err: unknown): boolean => {
+    const msg = String((err as Error)?.message || '');
     if (
       msg.includes('Target closed') ||
       msg.includes('Target page, context or browser has been closed') ||
@@ -413,15 +418,30 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        // Capture page DOM HTML
+        // Capture page DOM HTML (strip source-platform watermarks so all export
+        // formats — HTML, React, Next.js — ship clean output)
         const pageHtml = await page.content();
+        const cleanPageHtml = stripPlatformWatermarks(pageHtml);
         const htmlFilename = urlToHtmlFilename(currentUrl, isEntry);
         const rawHtmlPath = path.join(/* turbopackIgnore: true */ pagesRawDir, htmlFilename);
-        fs.writeFileSync(rawHtmlPath, pageHtml, 'utf-8');
+        fs.writeFileSync(rawHtmlPath, cleanPageHtml, 'utf-8');
 
         if (isEntry) {
-          fs.writeFileSync(path.join(/* turbopackIgnore: true */ rawDir, 'page.html'), pageHtml, 'utf-8');
+          fs.writeFileSync(path.join(/* turbopackIgnore: true */ rawDir, 'page.html'), cleanPageHtml, 'utf-8');
         }
+
+        // Wait for the DOM to contain anchors — protects against extracting
+        // during early hydration when SPA frameworks briefly unmount/replace SSR markup.
+        try {
+          await page.evaluate(async () => {
+            const started = Date.now();
+            while (Date.now() - started < 8000) {
+              if (document.querySelectorAll('a[href]').length > 0) return true;
+              await new Promise((r) => setTimeout(r, 250));
+            }
+            return false;
+          });
+        } catch {}
 
         // Extract internal links for subpage crawling
         let internalLinks: string[] = [];
@@ -450,21 +470,22 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }, targetHost);
         } catch {}
 
-        // Fallback: Regex scan captured HTML source for relative links (e.g. href="/about", href="/portfolio")
-        const linkRegex = /href=["'](\/[a-zA-Z0-9_\-\/]+)["']/gi;
+        // Fallback: Regex scan captured HTML source for path-like relative links.
+        // Matches both `/about` and Framer-style `./about` (leading dot-slash),
+        // which the original `/`-anchored regex silently missed.
+        const linkRegex = /href=["']([^"']+)["']/gi;
         let match;
-        while ((match = linkRegex.exec(pageHtml)) !== null) {
-          const relPath = match[1];
-          if (relPath && relPath !== '/' && !relPath.startsWith('//')) {
-            try {
-              const fullUrl = normalizeUrl(new URL(relPath, currentUrl).href);
-              const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
-              const tHost = targetHost.toLowerCase().replace(/^www\./, '');
-              if (uHost === tHost && !internalLinks.includes(fullUrl)) {
-                internalLinks.push(fullUrl);
-              }
-            } catch {}
-          }
+        while ((match = linkRegex.exec(cleanPageHtml)) !== null) {
+          const hrefVal = (match[1] || '').trim();
+          if (!hrefVal || hrefVal === './' || hrefVal.startsWith('#') || hrefVal.startsWith('javascript:') || hrefVal.startsWith('mailto:') || hrefVal.startsWith('tel:') || hrefVal.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(hrefVal)) continue;
+          try {
+            const fullUrl = normalizeUrl(new URL(hrefVal, currentUrl).href);
+            const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
+            const tHost = targetHost.toLowerCase().replace(/^www\./, '');
+            if (uHost === tHost && !internalLinks.includes(fullUrl)) {
+              internalLinks.push(fullUrl);
+            }
+          } catch {}
         }
 
         log(`Discovered ${internalLinks.length} internal links on ${currentUrl}`);
@@ -589,7 +610,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }
 
           // 2. True Tablet Breakpoint Screenshot (768x1024)
-          let tabTab: any;
+          let tabTab: Page | null = null;
           try {
             tabTab = await context.newPage();
             await tabTab.setViewportSize({ width: 768, height: 1024 });
@@ -615,7 +636,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }
 
           // 3. True Mobile Breakpoint Screenshot (390x844)
-          let mobTab: any;
+          let mobTab: Page | null = null;
           try {
             mobTab = await context.newPage();
             await mobTab.setViewportSize({ width: 390, height: 844 });
@@ -704,6 +725,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         cssPaths.push(p);
       } else if (s.type === 'link' && s.href) {
         try {
+          const assetSafety = await validateUrlForSsrfAsync(s.href);
+          if (!assetSafety.valid) continue;
           const res = await context.request.get(s.href, { timeout: 8000 });
           if (res.ok()) {
             const p = path.join(stylesDir, `style_${styleIdx++}.css`);
@@ -742,6 +765,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
     for (const assetUrl of mergedAssetUrls) {
       try {
+        // Assets are downloaded server-side (Node), so a malicious page could
+        // otherwise point them at internal services. DNS-resolving SSRF check.
+        const assetSafety = await validateUrlForSsrfAsync(assetUrl);
+        if (!assetSafety.valid) {
+          log(`[SSRF Guard] Skipped blocked asset URL: ${assetUrl} (${assetSafety.reason})`);
+          continue;
+        }
         const res = await context.request.get(assetUrl, { timeout: 6000 });
         if (!res.ok()) continue;
 

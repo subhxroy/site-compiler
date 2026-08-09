@@ -10,7 +10,7 @@ export interface ExtractedMeta {
   title: string;
   canonicalUrl: string | null;
   metaTags: Array<{ name?: string; property?: string; content?: string; [key: string]: string | undefined }>;
-  jsonLd: any[];
+  jsonLd: unknown[];
 }
 
 export interface ExtractedAsset {

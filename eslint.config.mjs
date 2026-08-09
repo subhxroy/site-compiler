@@ -12,6 +12,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone admin portal build artifacts (own .next/out dirs)
+    "admin-portal/.next/**",
+    "admin-portal/out/**",
+    // Generated crawl/export artifacts and browser binaries
+    "exports/**",
+    "temp/**",
+    "downloads/**",
+    "pw-browsers/**",
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

@@ -64,7 +64,7 @@ export async function detectSections(
   const trimmedHtml = trimDomForAi(cleanedHtml);
 
   // Prepare image block if screenshot exists
-  let imageBlock: any = null;
+  let imageBlock: Anthropic.ImageBlockParam | null = null;
   if (desktopScreenshotPath && fs.existsSync(desktopScreenshotPath)) {
     try {
       const imgBuffer = fs.readFileSync(desktopScreenshotPath);
@@ -92,7 +92,7 @@ Each section object MUST contain:
 
 Return ONLY JSON. Do not include markdown code block formatting or extra text.`;
 
-  const userContent: any[] = [
+  const userContent: Anthropic.ContentBlockParam[] = [
     {
       type: 'text',
       text: `Analyze this HTML structure (and screenshot if provided) to identify top-level UI sections:\n\n${trimmedHtml.substring(0, 50000)}`,

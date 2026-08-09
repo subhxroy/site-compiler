@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import {
   User,
   onAuthStateChanged,
@@ -73,29 +73,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
 
           if (currentUser) {
-            // Check email domain/pattern for admin fallback
-            const emailLower = (currentUser.email || '').toLowerCase();
-            const isAdminFallback = emailLower.includes('subhroy') || emailLower.includes('whysaurjya') || emailLower.includes('admin');
-            if (isAdminFallback) {
-              setIsAdmin(true);
-              setUserRole('admin');
-            }
-
-            // Sync user profile to Next.js API route (/api/user/sync)
+            // Sync user profile to Next.js API route (/api/user/sync).
+            // The server derives identity from the verified ID token, never
+            // from the request body, so admin role can't be spoofed.
             try {
+              const idToken = await currentUser.getIdToken(true);
               const res = await fetch('/api/user/sync', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${idToken}`,
+                },
                 body: JSON.stringify({
-                  uid: currentUser.uid,
-                  email: currentUser.email,
                   displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
                   photoURL: currentUser.photoURL || null,
                 }),
               });
               if (res.ok) {
                 const data = await res.json();
-                if (data.isAdmin || data.role === 'admin' || isAdminFallback) {
+                if (data.isAdmin || data.role === 'admin') {
                   setIsAdmin(true);
                   setUserRole('admin');
                 } else {
@@ -120,8 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
         }
       );
-    } catch (err: any) {
+    } catch {
       clearTimeout(timer);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
     }
 
@@ -152,20 +149,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const saveUserExport = async (exportData: UserExportRecord) => {
     if (!user) return;
     try {
+      const idToken = await user.getIdToken(true);
       await fetch('/api/user/exports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid, ...exportData }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(exportData),
       }).catch(() => {});
     } catch {
       // Silently handle save export error
     }
   };
 
-  const getUserExports = async (): Promise<UserExportRecord[]> => {
+  const getUserExports = useCallback(async (): Promise<UserExportRecord[]> => {
     if (!user) return [];
     try {
-      const res = await fetch(`/api/user/exports?uid=${user.uid}`).catch(() => null);
+      const idToken = await user.getIdToken(true);
+      const res = await fetch('/api/user/exports', {
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      }).catch(() => null);
       if (res && res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.exports)) return data.exports;
@@ -174,7 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return [];
     }
-  };
+  }, [user]);
 
   const getIdToken = async (): Promise<string | null> => {
     try {

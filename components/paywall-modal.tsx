@@ -81,7 +81,7 @@ export function PaywallModal({
       } else {
         setError(data.error || 'Failed to submit payment verification');
       }
-    } catch (err: any) {
+    } catch {
       setError('Network error submitting payment verification');
     } finally {
       setSubmitting(false);

@@ -14,6 +14,7 @@ export default function ExportHistoryPage() {
 
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFetching(true);
       getUserExports()
         .then((records) => setExports(records))
@@ -21,7 +22,7 @@ export default function ExportHistoryPage() {
     } else {
       setFetching(false);
     }
-  }, [user]);
+  }, [user, getUserExports]);
 
   return (
     <main className="pt-28 pb-24">

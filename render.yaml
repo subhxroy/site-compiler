@@ -23,3 +23,15 @@ services:
         value: 10000
       - key: FRONTEND_URL
         value: https://site-compiler.netlify.app
+      - key: ADMIN_BYPASS_SECRET
+        # Shared secret used by the Netlify download route (BACKEND_ADMIN_SECRET)
+        # to bypass the payment gate for verified admins and Firestore-approved
+        # payments. MUST match the BACKEND_ADMIN_SECRET env var set in the
+        # Netlify dashboard.
+        #
+        # SECURITY: no value is committed here. Generate a fresh secret, then
+        # set it manually in BOTH the Render dashboard (as ADMIN_BYPASS_SECRET)
+        # and the Netlify dashboard (as BACKEND_ADMIN_SECRET). A value synced
+        # from this file would land in git history and defeat the payment gate.
+        # Missing value == fail closed (downloads blocked) until configured.
+        sync: false

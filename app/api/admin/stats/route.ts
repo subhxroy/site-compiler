@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     // Server health status check
     let backendStatus = 'offline';
     let backendUptime = 0;
-    let backendMemory: any = null;
+    let backendMemory: unknown = null;
 
     try {
       const healthRes = await fetch(`${API_BASE_URL}/health`, { cache: 'no-store' });
@@ -53,8 +53,8 @@ export async function GET(req: Request) {
       },
       { headers: corsHeaders }
     );
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch admin stats' }, { status: 500, headers: corsHeaders });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message || 'Failed to fetch admin stats' }, { status: 500, headers: corsHeaders });
   }
 }
 

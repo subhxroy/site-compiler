@@ -586,7 +586,7 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     if (!rawHtmlPath) continue;
 
     const rawHtml = fs.readFileSync(rawHtmlPath, 'utf-8');
-    const { $ } = cleanDom(rawHtml, assetMap, baseUrl, pagesToProcess, pageItem.htmlFilename);
+    const { $ } = cleanDom(rawHtml, assetMap, baseUrl, pagesToProcess);
 
     // ── Head cleanup ──
     // Remove only external stylesheets (we bundle them into styles.css)

@@ -1,5 +1,6 @@
 import { Project } from 'ts-morph';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import prettier from 'prettier';
 import { convertStyleStringtoTailwind } from './tailwind-mapper';
 import { DetectedSection } from '../../detector/section-detector';
@@ -20,7 +21,7 @@ export function sanitizeComponentName(name: string, index: number): string {
 
 function convertCheerioElementToJsx(
   $: cheerio.CheerioAPI,
-  element: any,
+  element: AnyNode,
   depth: number = 0
 ): string {
   if (element.type === 'text') {
@@ -61,7 +62,7 @@ function convertCheerioElementToJsx(
     const val = typeof rawVal === 'string' ? rawVal : String(rawVal || '');
     if (key.startsWith('on') && key.length > 2) continue;
 
-    let jsxKey = attribMap[key.toLowerCase()] || (key.includes('-') ? key : key.replace(/[^a-zA-Z0-9_]/g, ''));
+    const jsxKey = attribMap[key.toLowerCase()] || (key.includes('-') ? key : key.replace(/[^a-zA-Z0-9_]/g, ''));
     if (!jsxKey) continue;
 
     if (attribSeen.has(jsxKey)) continue;
@@ -155,7 +156,7 @@ export async function generateComponentFromSection(
 
   try {
     code = await prettier.format(code, { parser: 'typescript', singleQuote: true });
-  } catch (e) {
+  } catch {
     code = code.replace(/className="(.*?)"/g, (_, cls) => `className="${cls.replace(/"/g, "'")}"`);
     try {
       code = await prettier.format(code, { parser: 'typescript', singleQuote: true });

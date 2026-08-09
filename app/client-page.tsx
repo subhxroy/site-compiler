@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import { getApiUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
@@ -140,7 +139,7 @@ const Icon = {
 };
 
 function FormatCard({
-  value, selected, title, description, badge, onClick,
+  selected, title, description, badge, onClick,
 }: {
   value: OutputFormat; selected: boolean; title: string;
   description: string; badge?: string; onClick: () => void;
@@ -184,7 +183,7 @@ const viewportIcons = {
 };
 
 export default function SiteCompilerPage({ faqs }: { faqs: { question: string; answer: string }[] }) {
-  const { user, isAdmin, saveUserExport } = useAuth();
+  const { user, isAdmin, saveUserExport, getIdToken } = useAuth();
   const [url,      setUrl]      = useState('');
   const [format,   setFormat]   = useState<OutputFormat>('html');
   const [loading,  setLoading]  = useState(false);
@@ -205,6 +204,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     const savedJobId = queryJobId || localStorage.getItem('sitecompiler_active_job_id');
 
     if (savedJobId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setJobId(savedJobId);
       setLoading(true);
       fetch(getApiUrl(`/api/job/${savedJobId}/status`))
@@ -242,7 +242,10 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           if (data.status === 'completed' || data.status === 'failed') {
             setLoading(false);
             localStorage.removeItem('sitecompiler_active_job_id');
-            clearInterval(iv);
+            // Keep polling while a submitted payment is still awaiting admin
+            // approval so the Download button unlocks as soon as it's granted.
+            const awaitingApproval = data.status === 'completed' && data.paymentSubmitted && !data.paymentApproved;
+            if (!awaitingApproval) clearInterval(iv);
           }
         }
       } catch {}
@@ -253,6 +256,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   // Save to Firebase Firestore when completed and user is logged in
   useEffect(() => {
     if (job && job.status === 'completed' && user && !savedToFirebase) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSavedToFirebase(true);
       saveUserExport({
         jobId: job.id,
@@ -280,7 +284,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [loading, job?.status]);
+  }, [loading, job?.status, job]);
 
   useEffect(() => {
     if (tab === 'logs') logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -512,6 +516,37 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                       <a
                         href={getApiUrl(job.downloadUrl)}
                         download
+                        onClick={async (e) => {
+                          // Admin free-pass: plain anchor navigation can't carry
+                          // the Firebase ID token the download route needs to
+                          // bypass the payment gate. Download via authenticated
+                          // fetch + blob instead.
+                          if (!isAdmin || job.paymentApproved) return;
+                          e.preventDefault();
+                          try {
+                            const token = await getIdToken();
+                            const res = await fetch(getApiUrl(job.downloadUrl!), {
+                              headers: token ? { Authorization: `Bearer ${token}` } : {},
+                            });
+                            if (!res.ok) {
+                              let msg = 'Download failed';
+                              try { const b = await res.json(); if (b?.error) msg = b.error; } catch {}
+                              alert(msg);
+                              return;
+                            }
+                            const blob = await res.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = blobUrl;
+                            a.download = `${job.id}.zip`;
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            URL.revokeObjectURL(blobUrl);
+                          } catch (err: unknown) {
+                            alert('Download failed: ' + ((err as Error)?.message || 'network error'));
+                          }
+                        }}
                         className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
                       >
                         <Icon.Download />

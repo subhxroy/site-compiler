@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createJob } from '@/lib/jobs/store';
 import { API_BASE_URL } from '@/lib/api-config';
-import { validateUrlForSsrf } from '@/lib/security/ssrf';
+import { validateUrlForSsrfAsync } from '@/lib/security/ssrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { errorMessage } from '@/lib/errors';
 
 export async function POST(req: Request) {
   try {
@@ -13,10 +14,12 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { url, format = 'nextjs' } = body;
+    const { url } = body;
+    const allowedFormats = ['html', 'react', 'nextjs'];
+    const format = allowedFormats.includes(body.format) ? body.format : 'nextjs';
 
-    // 2. Anti-SSRF & Input URL Validation
-    const ssrfCheck = validateUrlForSsrf(url);
+    // 2. Anti-SSRF & Input URL Validation (DNS-resolving)
+    const ssrfCheck = await validateUrlForSsrfAsync(url);
     if (!ssrfCheck.valid || !ssrfCheck.url) {
       return NextResponse.json({ error: ssrfCheck.reason || 'Invalid or forbidden target URL' }, { status: 400 });
     }
@@ -33,10 +36,10 @@ export async function POST(req: Request) {
         });
         const data = await backendRes.json();
         return NextResponse.json(data, { status: backendRes.status });
-      } catch (proxyError: any) {
-        console.error('Failed to proxy export request to Render backend:', proxyError);
+      } catch (proxyError) {
+        console.error('Failed to proxy export request to Render backend:', errorMessage(proxyError));
         return NextResponse.json(
-          { error: `Backend service unavailable (${API_BASE_URL}). ${proxyError.message}` },
+          { error: `Backend service unavailable (${API_BASE_URL}). ${errorMessage(proxyError)}` },
           { status: 502 }
         );
       }
@@ -53,7 +56,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ jobId: job.id, status: job.status });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

@@ -9,9 +9,9 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
-function getReadableErrorMessage(err: any): string {
-  const code = err?.code || '';
-  const msg = err?.message || String(err);
+function getReadableErrorMessage(err: unknown): string {
+  const code = (err as { code?: string })?.code || '';
+  const msg = (err as { message?: string })?.message || String(err);
 
   if (code.includes('auth/api-key-not-valid') || msg.includes('api-key-not-valid') || msg.includes('API key')) {
     return 'Firebase API key is not configured in Netlify environment variables. Please set NEXT_PUBLIC_FIREBASE_API_KEY in your Netlify site settings.';
@@ -57,7 +57,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       setLoading(true);
       await signInWithGoogle();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(getReadableErrorMessage(err));
     } finally {
       setLoading(false);
@@ -80,10 +80,10 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         await signInWithEmail(email, password);
       }
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(getReadableErrorMessage(err));
       // Auto-suggest sign up if account not found
-      if (!isSignUp && (err?.code?.includes('user-not-found') || err?.code?.includes('invalid-credential'))) {
+      if (!isSignUp && ((err as { code?: string })?.code?.includes('user-not-found') || (err as { code?: string })?.code?.includes('invalid-credential'))) {
         setIsSignUp(true);
       }
     } finally {

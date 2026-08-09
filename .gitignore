@@ -11,6 +11,7 @@
 # Next.js & Build Artifacts
 /.next/
 admin-portal/.next/
+admin-portal/out/
 /out/
 /build/
 /dist/

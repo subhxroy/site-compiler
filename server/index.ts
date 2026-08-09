@@ -7,9 +7,9 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
-import { createJob, getJob } from '../lib/jobs/store';
+import { createJob, getJob, toPublicJob } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
-import { validateUrlForSsrf } from '../lib/security/ssrf';
+import { validateUrlForSsrfAsync } from '../lib/security/ssrf';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,10 +23,28 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// CORS configuration - Allow all origins dynamically (Netlify, Vercel, localhost, custom domains)
+// CORS configuration — allow known origins only (local dev + configured domains).
+// The Render backend is reached server-to-server from the Next.js API routes in
+// production, so reflecting arbitrary browser origins with credentials is not
+// needed and is a latent vulnerability. Custom origins can be added via the
+// CORS_ORIGINS env var (comma-separated list of origins).
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    const u = new URL(origin);
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
+    const extra = (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return extra.some((e) => {
+      try { return new URL(e).origin === u.origin; } catch { return false; }
+    });
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   cors({
-    origin: true,
+    origin: isAllowedOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -60,11 +78,13 @@ app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
 // ── Export Endpoint ────────────────────────────────────────────────────────────
-app.post('/api/export', exportRateLimiter, (req: Request, res: Response) => {
+app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { url, format = 'nextjs' } = req.body || {};
+    const { url } = req.body || {};
+    const allowedFormats = ['html', 'react', 'nextjs'];
+    const format = allowedFormats.includes(req.body?.format) ? req.body.format : 'nextjs';
 
-    const ssrfCheck = validateUrlForSsrf(url);
+    const ssrfCheck = await validateUrlForSsrfAsync(url);
     if (!ssrfCheck.valid || !ssrfCheck.url) {
       res.status(400).json({ error: ssrfCheck.reason || 'Invalid or forbidden target URL' });
       return;
@@ -79,14 +99,18 @@ app.post('/api/export', exportRateLimiter, (req: Request, res: Response) => {
     });
 
     res.status(200).json({ jobId: job.id, status: job.status });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Internal Server Error' });
+  } catch (error: unknown) {
+    res.status(500).json({ error: (error as Error).message || 'Internal Server Error' });
   }
 });
 
 // ── Job Status Endpoint ────────────────────────────────────────────────────────
 app.get('/api/job/:id/status', (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
   const job = getJob(id);
 
   if (!job) {
@@ -94,12 +118,16 @@ app.get('/api/job/:id/status', (req: Request, res: Response) => {
     return;
   }
 
-  res.status(200).json(job);
+  res.status(200).json(toPublicJob(job));
 });
 
 // ── Job Download Endpoint ──────────────────────────────────────────────────────
 app.get('/api/job/:id/download', (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
   const job = getJob(id);
 
   if (!job || job.status !== 'completed') {
@@ -108,8 +136,15 @@ app.get('/api/job/:id/download', (req: Request, res: Response) => {
   }
 
   if (!job.paymentApproved) {
-    res.status(403).json({ error: 'Export pending admin payment approval' });
-    return;
+    // Admin free-pass: the Netlify download route verifies the Firebase admin
+    // ID token, then forwards this shared-secret header. Never trust browsers —
+    // only the frontend serverless function knows ADMIN_BYPASS_SECRET.
+    const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
+    const isAdminBypass = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
+    if (!isAdminBypass) {
+      res.status(403).json({ error: 'Export pending admin payment approval' });
+      return;
+    }
   }
 
   const exportDir = path.join(process.cwd(), 'exports', id);
@@ -134,6 +169,10 @@ app.get('/api/job/:id/screenshot', (req: Request, res: Response) => {
   const { id } = req.params;
   const viewport = (req.query.type as string) || 'desktop';
 
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
   if (!['desktop', 'tablet', 'mobile'].includes(viewport)) {
     res.status(400).json({ error: 'Invalid viewport type' });
     return;
