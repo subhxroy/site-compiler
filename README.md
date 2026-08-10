@@ -2,9 +2,9 @@
 
 # ⚡ SiteCompiler
 
-**Convert any published website into production-ready Static HTML, React TSX, or Next.js 15 + Tailwind CSS codebases.**
+**Convert any published website into production-ready Static HTML, React TSX, or Next.js 16 + Tailwind CSS codebases.**
 
-[![Next.js 15](https://img.shields.io/badge/Next.js-15.1-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-15.1-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
@@ -21,7 +21,7 @@
 
 **SiteCompiler** is an enterprise-grade website extraction and code compilation platform. It crawls published web pages (from Framer, Webflow, Wix, Squarespace, or custom static sites), parses DOM element structures, extracts assets (images, SVGs, custom fonts, stylesheets), and reconstructs them into clean, modular codebases.
 
-Whether you need a lightweight **Static HTML bundle**, modular **React TSX components**, or a full **Next.js 15 App Router project**, SiteCompiler builds the complete project structure and packages it into a downloadable `.zip` archive.
+Whether you need a lightweight **Static HTML bundle**, modular **React TSX components**, or a full **Next.js 16 App Router project**, SiteCompiler builds the complete project structure and packages it into a downloadable `.zip` archive.
 
 ---
 
@@ -30,7 +30,7 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
 - **🌐 Multi-Engine Code Generator**:
   - **Static HTML5**: Zero-dependency Semantic HTML5, CSS3, and JavaScript bundle.
   - **React TSX**: Modular React components styled with utility-first Tailwind CSS.
-  - **Next.js 15**: Fully scaffolded App Router project (`app/page.tsx`, `components/`, `public/`, `package.json`, `tsconfig.json`).
+  - **Next.js 16**: Fully scaffolded App Router project (`app/page.tsx`, `components/`, `public/`, `package.json`, `tsconfig.json`).
 - **🔐 Firebase Authentication & Firestore Cockpit**:
   - Google 1-Click Sign-In & Email/Password Authentication.
   - Automatic export history persistence in Firebase Firestore (`users/{uid}/exports`).
@@ -67,7 +67,7 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
                                  |                       |                       |
                                  v                       v                       v
                       +--------------------+   +--------------------+   +--------------------+
-                      |   Static HTML5     |   |     React TSX      |   |   Next.js 15 App   |
+                      |   Static HTML5     |   |     React TSX      |   |   Next.js 16 App   |
                       |    Generator       |   |     Generator      |   |   Router Scaffold  |
                       +--------------------+   +--------------------+   +--------------------+
                                  |                       |                       |
@@ -138,7 +138,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ```
 site-compiler/
-├── app/                        # Next.js 15 App Router Routes
+├── app/                        # Next.js 16 App Router Routes
 │   ├── api/                    # API Endpoints (crawling, jobs, user sync, downloads)
 │   ├── blog/                   # Blog & SEO Articles
 │   ├── docs/                   # Developer Documentation Pages

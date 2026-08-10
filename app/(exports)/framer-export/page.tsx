@@ -4,7 +4,7 @@ import { ExportPageTemplate, ExportPageData } from '@/components/export-page-tem
 
 export const metadata = buildMetadata({
   title: 'Export Framer Websites to Clean Code — SiteCompiler',
-  description: 'Convert published Framer websites into clean React TSX, Next.js 15, and static HTML bundles with zero lock-in.',
+  description: 'Convert published Framer websites into clean React TSX, Next.js 16, and static HTML bundles with zero lock-in.',
   path: '/framer-export',
 });
 
@@ -16,7 +16,7 @@ const data: ExportPageData = {
   path: '/framer-export',
   whatItProduces: [
     'Clean React TSX components with TypeScript prop definitions',
-    'Next.js 15 App Router page structure',
+    'Next.js 16 App Router page structure',
     'Universal Animation Shim v3.0 preserving Framer scroll reveals',
     'Local WOFF2 fonts, SVG icons, and image asset pipeline',
   ],
@@ -43,7 +43,7 @@ const data: ExportPageData = {
     },
     {
       question: 'Can I deploy the Framer export to Vercel?',
-      answer: 'Yes. The export includes a Next.js 15 App Router setup that deploys instantly on Vercel with zero configuration.',
+      answer: 'Yes. The export includes a Next.js 16 App Router setup that deploys instantly on Vercel with zero configuration.',
     },
   ],
 };

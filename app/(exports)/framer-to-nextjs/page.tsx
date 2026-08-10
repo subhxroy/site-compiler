@@ -3,19 +3,19 @@ import { buildMetadata } from '@/lib/seo/metadata';
 import { ExportPageTemplate, ExportPageData } from '@/components/export-page-template';
 
 export const metadata = buildMetadata({
-  title: 'Framer to Next.js: Convert Framer to Next.js 15 App Router — SiteCompiler',
-  description: 'Migrate Framer websites into Next.js 15 App Router projects with TypeScript, Tailwind CSS, and Vercel readiness.',
+  title: 'Framer to Next.js: Convert Framer to Next.js 16 App Router — SiteCompiler',
+  description: 'Migrate Framer websites into Next.js 16 App Router projects with TypeScript, Tailwind CSS, and Vercel readiness.',
   path: '/framer-to-nextjs',
 });
 
 const data: ExportPageData = {
   title: 'Framer to Next.js',
   badge: 'CONVERSION PAIR ENGINE',
-  headline: 'Migrate Framer sites to Next.js 15 App Router',
-  description: 'Compile published Framer templates into complete Next.js 15 App Router projects with Tailwind CSS.',
+  headline: 'Migrate Framer sites to Next.js 16 App Router',
+  description: 'Compile published Framer templates into complete Next.js 16 App Router projects with Tailwind CSS.',
   path: '/framer-to-nextjs',
   whatItProduces: [
-    'Next.js 15 App Router project structure (app/layout.tsx, app/page.tsx)',
+    'Next.js 16 App Router project structure (app/layout.tsx, app/page.tsx)',
     'Tailwind CSS v4 styling configuration',
     'Local font optimization and static page generation (SSG)',
     'Ready for one-click Vercel or Netlify deployments',
@@ -42,7 +42,7 @@ export default function Page() {
   faqs: [
     {
       question: 'Can I host the generated Next.js project anywhere?',
-      answer: 'Yes! The project is a standard Next.js 15 codebase that can be deployed to Vercel, Netlify, AWS Amplify, or Docker.',
+      answer: 'Yes! The project is a standard Next.js 16 codebase that can be deployed to Vercel, Netlify, AWS Amplify, or Docker.',
     },
   ],
 };

@@ -5,11 +5,14 @@ export type JobStatus =
   | 'pending'
   | 'crawling'
   | 'parsing'
+  | 'validating'
   | 'detecting'
   | 'generating'
+  | 'validating-output'
   | 'zipping'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 export interface JobState {
   id: string;
@@ -20,6 +23,7 @@ export interface JobState {
   logs: string[];
   createdAt: number;
   completedAt?: number;
+  cancelledAt?: number;
   error?: string;
   downloadUrl?: string;
   zipSizeKb?: number;
@@ -56,8 +60,10 @@ const ACTIVE_STATUSES = new Set<JobStatus>([
   'pending',
   'crawling',
   'parsing',
+  'validating',
   'detecting',
   'generating',
+  'validating-output',
   'zipping',
 ]);
 
@@ -142,6 +148,7 @@ export function toPublicJob(job: JobState) {
     progressMessage: job.progressMessage,
     createdAt: job.createdAt,
     completedAt: job.completedAt,
+    cancelledAt: job.cancelledAt,
     error: job.error,
     downloadUrl: job.downloadUrl,
     zipSizeKb: job.zipSizeKb,
@@ -164,4 +171,36 @@ export function updateJob(jobId: string, updates: Partial<JobState>, logMsg?: st
     const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
     job.logs.push(`[${timeStr}] ${logMsg}`);
   }
+}
+
+export function isJobActive(jobId: string): boolean {
+  const job = jobStore.get(jobId);
+  return !!job && ACTIVE_STATUSES.has(job.status);
+}
+
+/**
+ * Mark a job as cancelled and purge its export dir. The pipeline checks this
+ * flag between phases, so a cancelled job stops at the next safe boundary
+ * instead of corrupting an in-progress write. Cancellation is terminal and
+ * cannot be reversed.
+ */
+export function cancelExportJob(jobId: string): JobState | undefined {
+  const job = jobStore.get(jobId);
+  if (!job) return undefined;
+  if (!ACTIVE_STATUSES.has(job.status)) {
+    return job; // already completed / failed — nothing to cancel
+  }
+  job.status = 'cancelled';
+  job.cancelledAt = Date.now();
+  job.progressMessage = 'Export cancelled.';
+  const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
+  job.logs.push(`[${timeStr}] Job cancelled by user.`);
+  try {
+    const exportDir = path.resolve(process.cwd(), 'exports', jobId);
+    if (fs.existsSync(exportDir)) {
+      fs.rmSync(exportDir, { recursive: true, force: true });
+      console.log(`[Exports] Purged cancelled job export dir: ${jobId}`);
+    }
+  } catch {}
+  return job;
 }

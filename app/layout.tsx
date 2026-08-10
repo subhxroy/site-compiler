@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "SiteCompiler — AI Website Exporter & Code Generator",
-    description: "Convert published Framer, Webflow, and static websites into clean React TSX, Next.js 15, and Tailwind CSS code.",
+    description: "Convert published Framer, Webflow, and static websites into clean React TSX, Next.js 16, and Tailwind CSS code.",
     url: siteUrl,
     siteName: "SiteCompiler",
     images: [{ url: `${siteUrl}/og?title=${encodeURIComponent("SiteCompiler — Website to Code Platform")}`, width: 1200, height: 630 }],
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "SiteCompiler — AI Website Exporter & Code Generator",
-    description: "Convert published Framer, Webflow, and static websites into clean React TSX, Next.js 15, and Tailwind CSS code.",
+    description: "Convert published Framer, Webflow, and static websites into clean React TSX, Next.js 16, and Tailwind CSS code.",
     images: [`${siteUrl}/og?title=${encodeURIComponent("SiteCompiler — Website to Code Platform")}`],
   },
 };

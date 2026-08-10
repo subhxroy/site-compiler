@@ -132,7 +132,8 @@ export default function RootLayout({
   }
   fs.writeFileSync(path.join(appDir, 'globals.css'), globalsCss, 'utf-8');
 
-  // 8. Generate package.json
+  // 8. Generate package.json (Next.js 16 + React 19 — must match the installed
+  // toolchain so `npm install && npm run build` works out of the box)
   const packageJson = {
     name: 'sitecompiler-exported-site',
     version: '1.0.0',
@@ -143,9 +144,9 @@ export default function RootLayout({
       start: 'next start',
     },
     dependencies: {
-      next: '^15.0.0',
-      react: '^19.0.0',
-      'react-dom': '^19.0.0',
+      next: '^16.3.0',
+      react: '^19.2.0',
+      'react-dom': '^19.2.0',
     },
     devDependencies: {
       '@tailwindcss/postcss': '^4.0.0',
@@ -157,6 +158,24 @@ export default function RootLayout({
     },
   };
   fs.writeFileSync(path.join(outputDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf-8');
+
+  // 8b. Generate PostCSS config — required for Tailwind v4 (`@import "tailwindcss"`
+  // in globals.css won't compile without the @tailwindcss/postcss plugin).
+  const postcssConfig = `
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+};
+  `.trim();
+  fs.writeFileSync(path.join(outputDir, 'postcss.config.mjs'), postcssConfig, 'utf-8');
+
+  const gitignore = `node_modules
+.next
+out
+*.tsbuildinfo
+`;
+  fs.writeFileSync(path.join(outputDir, '.gitignore'), gitignore, 'utf-8');
 
   // 9. Generate configuration files
   const nextConfig = `

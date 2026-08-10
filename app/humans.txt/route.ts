@@ -7,7 +7,7 @@ Location: India
 Contact: contact.subhroy@gmail.com
 
 /* SITE */
-Built with: Next.js 15, TypeScript, Tailwind CSS, Playwright, Cheerio
+Built with: Next.js 16, TypeScript, Tailwind CSS, Playwright, Cheerio
 Architecture: Single Node Compiler Pipeline
 `;
 

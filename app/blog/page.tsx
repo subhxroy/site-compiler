@@ -27,7 +27,7 @@ export default function BlogIndexPage() {
           </div>
           <h1 className="text-4xl sm:text-5xl font-normal text-white">Guides, tutorials, & deep dives.</h1>
           <p className="text-base text-[#9c9c9d] leading-relaxed">
-            Learn how to compile visual websites into clean React, Next.js 15, and Tailwind CSS code bases.
+            Learn how to compile visual websites into clean React, Next.js 16, and Tailwind CSS code bases.
           </p>
         </div>
 

@@ -66,8 +66,8 @@ export default function AboutPage() {
     {
       name: 'SiteCompiler',
       category: 'AI Website Compiler & Code Generator',
-      description: 'An open-source website compilation engine that turns published Framer, Webflow, and visual builder sites into clean Next.js 15, React TSX, and Tailwind CSS codebases.',
-      tech: ['Next.js 15', 'TypeScript', 'Tailwind CSS', 'Cheerio', 'Playwright'],
+      description: 'An open-source website compilation engine that turns published Framer, Webflow, and visual builder sites into clean Next.js 16, React TSX, and Tailwind CSS codebases.',
+      tech: ['Next.js 16', 'TypeScript', 'Tailwind CSS', 'Cheerio', 'Playwright'],
       link: 'https://site-compiler.netlify.app',
       isCurrent: true
     },
@@ -109,7 +109,7 @@ export default function AboutPage() {
   ];
 
   const skills = [
-    { title: 'Full-Stack Development', items: ['Next.js 15 App Router', 'React 19 & TSX', 'TypeScript', 'Node.js & Express', 'Tailwind CSS'] },
+    { title: 'Full-Stack Development', items: ['Next.js 16 App Router', 'React 19 & TSX', 'TypeScript', 'Node.js & Express', 'Tailwind CSS'] },
     { title: 'Visual Builders & Design', items: ['Framer Development', 'Figma UI/UX', 'Component Systems', 'Dark Mode & Glassmorphism'] },
     { title: 'AI & Systems Engineering', items: ['AI Agentic Frameworks (Agentic OS)', 'AI Compiler Pipelines', 'Playwright & Cheerio', 'Firebase & Cloud Services'] },
   ];
@@ -247,7 +247,7 @@ export default function AboutPage() {
             When projects scale to require custom API backends, serverless edge functions, custom database queries, or self-hosted deployment, developers are often forced to manually rewrite visually-designed sites from scratch in React or Next.js.
           </p>
           <p>
-            Subhankar built <strong className="text-white">SiteCompiler</strong> to solve this exact problem. By engineering a high-speed compilation pipeline that parses live published websites into clean, standard-compliant Next.js 15, React 19 TSX, and Tailwind CSS codebases, SiteCompiler gives creators absolute ownership over their frontend source code.
+            Subhankar built <strong className="text-white">SiteCompiler</strong> to solve this exact problem. By engineering a high-speed compilation pipeline that parses live published websites into clean, standard-compliant Next.js 16, React 19 TSX, and Tailwind CSS codebases, SiteCompiler gives creators absolute ownership over their frontend source code.
           </p>
         </div>
 

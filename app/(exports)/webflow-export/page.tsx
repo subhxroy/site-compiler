@@ -4,7 +4,7 @@ import { ExportPageTemplate, ExportPageData } from '@/components/export-page-tem
 
 export const metadata = buildMetadata({
   title: 'Export Webflow Websites to React & Tailwind — SiteCompiler',
-  description: 'Compile published Webflow websites into clean React components, Next.js 15 projects, and semantic Tailwind CSS.',
+  description: 'Compile published Webflow websites into clean React components, Next.js 16 projects, and semantic Tailwind CSS.',
   path: '/webflow-export',
 });
 
@@ -12,7 +12,7 @@ const data: ExportPageData = {
   title: 'Webflow Export',
   badge: 'WEBFLOW EXPORTER ENGINE',
   headline: 'Export Webflow sites to clean React & Tailwind CSS',
-  description: 'Convert Webflow DOM trees and ix2 interaction triggers into production-ready Next.js 15 App Router code bases.',
+  description: 'Convert Webflow DOM trees and ix2 interaction triggers into production-ready Next.js 16 App Router code bases.',
   path: '/webflow-export',
   whatItProduces: [
     'Modular React components without Webflow JS runtime overhead',

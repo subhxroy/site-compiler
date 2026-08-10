@@ -1,20 +1,35 @@
-export function cssPropertyToTailwind(prop: string, value: string): string {
+/**
+ * Build a safe Tailwind arbitrary value class. Returns null when the value
+ * cannot be represented safely (url(), quotes, control chars, semicolons) so
+ * the caller can keep the original inline style instead of emitting a broken
+ * or silently-mutated class.
+ */
+function arbitraryValue(cleanProp: string, cleanVal: string): string | null {
+  if (/[;{}]/.test(cleanVal) || /url\(/i.test(cleanVal) || /["\n\r]/.test(cleanVal)) {
+    return null;
+  }
+  const safe = cleanVal.replace(/\s+/g, '_');
+  if (!safe) return null;
+  return `[${cleanProp}:${safe}]`;
+}
+
+export function cssPropertyToTailwind(prop: string, value: string): string | null {
   const cleanProp = prop.trim().toLowerCase();
-  const cleanVal = value.trim().toLowerCase().replace('!important', '').trim();
+  const cleanVal = value.trim().replace('!important', '').trim().toLowerCase();
 
   // Color mapping helpers
   if (cleanProp === 'color') {
     if (cleanVal === '#ffffff' || cleanVal === 'white') return 'text-white';
     if (cleanVal === '#000000' || cleanVal === 'black') return 'text-black';
     if (cleanVal === 'transparent') return 'text-transparent';
-    return `text-[${cleanVal}]`;
+    return arbitraryValue('text', cleanVal);
   }
 
   if (cleanProp === 'background-color') {
     if (cleanVal === '#ffffff' || cleanVal === 'white') return 'bg-white';
     if (cleanVal === '#000000' || cleanVal === 'black') return 'bg-black';
     if (cleanVal === 'transparent') return 'bg-transparent';
-    return `bg-[${cleanVal}]`;
+    return arbitraryValue('bg', cleanVal);
   }
 
   // Display
@@ -66,17 +81,17 @@ export function cssPropertyToTailwind(prop: string, value: string): string {
     '20px': '5', '24px': '6', '32px': '8', '40px': '10', '48px': '12', '64px': '16',
   };
 
-  if (cleanProp === 'padding') return pxMap[cleanVal] ? `p-${pxMap[cleanVal]}` : `p-[${cleanVal}]`;
-  if (cleanProp === 'padding-top') return pxMap[cleanVal] ? `pt-${pxMap[cleanVal]}` : `pt-[${cleanVal}]`;
-  if (cleanProp === 'padding-right') return pxMap[cleanVal] ? `pr-${pxMap[cleanVal]}` : `pr-[${cleanVal}]`;
-  if (cleanProp === 'padding-bottom') return pxMap[cleanVal] ? `pb-${pxMap[cleanVal]}` : `pb-[${cleanVal}]`;
-  if (cleanProp === 'padding-left') return pxMap[cleanVal] ? `pl-${pxMap[cleanVal]}` : `pl-[${cleanVal}]`;
+  if (cleanProp === 'padding') return pxMap[cleanVal] ? `p-${pxMap[cleanVal]}` : arbitraryValue('p', cleanVal);
+  if (cleanProp === 'padding-top') return pxMap[cleanVal] ? `pt-${pxMap[cleanVal]}` : arbitraryValue('pt', cleanVal);
+  if (cleanProp === 'padding-right') return pxMap[cleanVal] ? `pr-${pxMap[cleanVal]}` : arbitraryValue('pr', cleanVal);
+  if (cleanProp === 'padding-bottom') return pxMap[cleanVal] ? `pb-${pxMap[cleanVal]}` : arbitraryValue('pb', cleanVal);
+  if (cleanProp === 'padding-left') return pxMap[cleanVal] ? `pl-${pxMap[cleanVal]}` : arbitraryValue('pl', cleanVal);
 
-  if (cleanProp === 'margin') return pxMap[cleanVal] ? `m-${pxMap[cleanVal]}` : `m-[${cleanVal}]`;
-  if (cleanProp === 'margin-top') return pxMap[cleanVal] ? `mt-${pxMap[cleanVal]}` : `mt-[${cleanVal}]`;
-  if (cleanProp === 'margin-right') return pxMap[cleanVal] ? `mr-${pxMap[cleanVal]}` : `mr-[${cleanVal}]`;
-  if (cleanProp === 'margin-bottom') return pxMap[cleanVal] ? `mb-${pxMap[cleanVal]}` : `mb-[${cleanVal}]`;
-  if (cleanProp === 'margin-left') return pxMap[cleanVal] ? `ml-${pxMap[cleanVal]}` : `ml-[${cleanVal}]`;
+  if (cleanProp === 'margin') return pxMap[cleanVal] ? `m-${pxMap[cleanVal]}` : arbitraryValue('m', cleanVal);
+  if (cleanProp === 'margin-top') return pxMap[cleanVal] ? `mt-${pxMap[cleanVal]}` : arbitraryValue('mt', cleanVal);
+  if (cleanProp === 'margin-right') return pxMap[cleanVal] ? `mr-${pxMap[cleanVal]}` : arbitraryValue('mr', cleanVal);
+  if (cleanProp === 'margin-bottom') return pxMap[cleanVal] ? `mb-${pxMap[cleanVal]}` : arbitraryValue('mb', cleanVal);
+  if (cleanProp === 'margin-left') return pxMap[cleanVal] ? `ml-${pxMap[cleanVal]}` : arbitraryValue('ml', cleanVal);
 
   // Font weight
   if (cleanProp === 'font-weight') {
@@ -84,7 +99,7 @@ export function cssPropertyToTailwind(prop: string, value: string): string {
     if (cleanVal === '500') return 'font-medium';
     if (cleanVal === '600') return 'font-semibold';
     if (cleanVal === '700' || cleanVal === 'bold') return 'font-bold';
-    return `font-[${cleanVal}]`;
+    return arbitraryValue('font', cleanVal);
   }
 
   // Text alignment
@@ -94,8 +109,10 @@ export function cssPropertyToTailwind(prop: string, value: string): string {
     if (cleanVal === 'right') return 'text-right';
   }
 
-  // Fallback to arbitrary value syntax for any unmapped CSS declaration
-  return `[${cleanProp}:${cleanVal.replace(/\s+/g, '_')}]`;
+  // Fallback to arbitrary value syntax — ONLY when the value is safe for
+  // Tailwind arbitrary values. Anything with url(), quotes, or control
+  // characters must keep the original inline style instead.
+  return arbitraryValue(cleanProp, cleanVal);
 }
 
 export function convertStyleStringtoTailwind(styleString: string): string {
@@ -104,10 +121,22 @@ export function convertStyleStringtoTailwind(styleString: string): string {
   const classes: string[] = [];
 
   for (const decl of declarations) {
-    const [prop, val] = decl.split(':');
-    if (prop && val) {
-      classes.push(cssPropertyToTailwind(prop, val));
+    // Split on the FIRST colon only — values may themselves contain colons
+    // (url(...), gradients, calc(1px : 2px), etc.).
+    const colonIdx = decl.indexOf(':');
+    if (colonIdx < 0) continue;
+    const prop = decl.slice(0, colonIdx).trim();
+    const val = decl.slice(colonIdx + 1).trim();
+    if (!prop || !val) continue;
+
+    const cls = cssPropertyToTailwind(prop, val);
+    if (cls === null) {
+      // Unsafe to represent as a Tailwind utility — bail out entirely so the
+      // caller preserves the original inline style instead of emitting a
+      // broken class (which would silently drop the styling).
+      return '';
     }
+    classes.push(cls);
   }
 
   return classes.join(' ');

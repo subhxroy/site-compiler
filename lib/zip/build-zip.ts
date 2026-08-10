@@ -7,6 +7,8 @@ export interface ZipOptions {
   format: 'html' | 'react' | 'nextjs';
   sourceUrl: string;
   title?: string;
+  pageCount?: number;
+  assetCount?: number;
 }
 
 // ── README template ──────────────────────────────────────────────────────────
@@ -16,13 +18,15 @@ function buildReadme(opts: {
   title: string;
   exportedAt: string;
   fileList: string[];
+  pageCount: number;
+  assetCount: number;
 }): string {
-  const { sourceUrl, format, title, exportedAt, fileList } = opts;
+  const { sourceUrl, format, title, exportedAt, fileList, pageCount, assetCount } = opts;
 
   const formatLabel =
     format === 'html' ? 'Static HTML / CSS / JS' :
-    format === 'react' ? 'React TSX Components' :
-    'Next.js 15 (App Router) + Tailwind CSS';
+    format === 'react' ? 'React (Next.js 16 scaffold) + Tailwind CSS v4' :
+    'Next.js 16 (App Router) + Tailwind CSS v4';
 
   const deploySection =
     format === 'html'
@@ -131,7 +135,25 @@ Exported by **SiteCompiler** — website source code exporter.
 
 - **Source URL:** ${sourceUrl}
 - **Export format:** ${formatLabel}
+- **Pages captured:** ${pageCount}
+- **Assets bundled:** ${assetCount}
 - **Exported at:** ${exportedAt}
+
+---
+
+## Previewing locally
+
+Always serve over HTTP — do not open \`index.html\` directly via \`file://\`.
+
+\`\`\`bash
+# Python (built-in)
+python -m http.server 8080
+
+# Node.js
+npx serve .
+\`\`\`
+
+Then open <http://localhost:8080> in your browser.
 
 ---
 
@@ -148,6 +170,17 @@ ${deploySection}
 \`\`\`
 ${fileList.join('\n')}
 \`\`\`
+
+---
+
+## Known limitations
+
+- Interactive behaviour driven by site JavaScript (form submission, dashboards,
+  client-side state) is not reproduced — this is a static snapshot export.
+- External scripts and analytics are stripped; animations that depend on the
+  original framework runtime are replaced by lightweight shims.
+- Hashed/generated class names are preserved as-is. Review component markup
+  before shipping to production.
 
 ---
 
@@ -189,7 +222,7 @@ function addFolderToZip(zip: AdmZip, folderPath: string, zipBasePath: string = '
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function createJobZip(options: ZipOptions): Promise<string> {
-  const { jobId, format, sourceUrl, title = 'Exported Site' } = options;
+  const { jobId, format, sourceUrl, title = 'Exported Site', pageCount = 1, assetCount = 0 } = options;
 
   const exportsDir = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'exports', jobId);
   const targetSubDir = format === 'html' ? 'html-export' : 'nextjs-export';
@@ -213,6 +246,8 @@ export async function createJobZip(options: ZipOptions): Promise<string> {
     title,
     exportedAt: new Date().toUTCString(),
     fileList: [...fileList, 'README.md'],
+    pageCount,
+    assetCount,
   });
   fs.writeFileSync(readmePath, readme, 'utf-8');
 

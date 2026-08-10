@@ -4,7 +4,7 @@ import { ExportPageTemplate, ExportPageData } from '@/components/export-page-tem
 
 export const metadata = buildMetadata({
   title: 'Export Wix Websites to Clean Code — SiteCompiler',
-  description: 'Convert published Wix websites into fast, lightweight HTML, React TSX, and Next.js 15 projects.',
+  description: 'Convert published Wix websites into fast, lightweight HTML, React TSX, and Next.js 16 projects.',
   path: '/wix-export',
 });
 

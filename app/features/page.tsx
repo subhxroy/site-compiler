@@ -33,8 +33,8 @@ export default function FeaturesPage() {
       tag: 'CSS AST ENGINE',
     },
     {
-      title: 'Next.js 15 & React TSX Code Generator',
-      desc: 'Transforms static HTML trees into structured Next.js 15 App Router pages and TypeScript components with clean Tailwind CSS utility mappings.',
+      title: 'Next.js 16 & React TSX Code Generator',
+      desc: 'Transforms static HTML trees into structured Next.js 16 App Router pages and TypeScript components with clean Tailwind CSS utility mappings.',
       tag: 'CODE GENERATOR',
     },
     {

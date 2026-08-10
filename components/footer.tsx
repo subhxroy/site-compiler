@@ -12,7 +12,7 @@ export function Footer() {
             <span>SiteCompiler</span>
           </Link>
           <p className="text-[#6a6b6c] max-w-sm leading-relaxed">
-            AI-powered website compilation platform. Crawl and convert Framer, Webflow, Wix, and static sites into clean Next.js 15, React TSX, and Tailwind CSS.
+            AI-powered website compilation platform. Crawl and convert Framer, Webflow, Wix, and static sites into clean Next.js 16, React TSX, and Tailwind CSS.
           </p>
           <div className="font-mono text-[11px] text-[#6a6b6c]">
             © {new Date().getFullYear()} SiteCompiler. Built by Subhankar Roy.
@@ -65,7 +65,7 @@ export function Footer() {
         <div className="flex items-center gap-2">
           <span>SiteCompiler v1.104</span>
           <span>•</span>
-          <span>Next.js 15 App Router</span>
+          <span>Next.js 16 App Router</span>
           <span>•</span>
           <span>100% Offline Bundled</span>
         </div>

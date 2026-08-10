@@ -79,7 +79,7 @@ export function softwareApplicationSchema() {
     operatingSystem: 'Web',
     applicationCategory: 'DeveloperApplication',
     description:
-      'AI-powered website compilation platform that converts published Framer, Webflow, Wix, and static websites into clean React TSX, Next.js 15 App Router, and Tailwind CSS code.',
+      'AI-powered website compilation platform that converts published Framer, Webflow, Wix, and static websites into clean React TSX, Next.js 16 App Router, and Tailwind CSS code.',
     url: SITE_URL,
     offers: [
       {
@@ -219,7 +219,7 @@ export function productSchema() {
     '@type': 'Product',
     name: 'SiteCompiler Pro Exporter',
     image: `${SITE_URL}/og?title=SiteCompiler%20Pro`,
-    description: 'Automated website compilation tool converting Framer & Webflow to clean Next.js 15 & React code.',
+    description: 'Automated website compilation tool converting Framer & Webflow to clean Next.js 16 & React code.',
     brand: {
       '@type': 'Brand',
       name: 'SiteCompiler',

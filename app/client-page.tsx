@@ -11,11 +11,14 @@ type JobStatus =
   | 'pending'
   | 'crawling'
   | 'parsing'
+  | 'validating'
   | 'detecting'
   | 'generating'
+  | 'validating-output'
   | 'zipping'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 interface JobState {
   id: string;
@@ -35,19 +38,23 @@ interface JobState {
 }
 
 const STEPS: { key: JobStatus; label: string }[] = [
-  { key: 'crawling',   label: 'Crawling site'     },
-  { key: 'parsing',    label: 'Processing assets' },
-  { key: 'detecting',  label: 'Analysing layout'  },
-  { key: 'generating', label: 'Generating code'   },
-  { key: 'zipping',    label: 'Packaging ZIP'     },
+  { key: 'crawling',          label: 'Crawling site'      },
+  { key: 'parsing',           label: 'Processing assets'  },
+  { key: 'validating',        label: 'Validating HTML'    },
+  { key: 'detecting',         label: 'Analysing layout'   },
+  { key: 'generating',        label: 'Generating code'    },
+  { key: 'validating-output', label: 'Quality check'      },
+  { key: 'zipping',           label: 'Packaging ZIP'      },
 ];
 
 const STATUS_ORDER: JobStatus[] = [
-  'pending','crawling','parsing','detecting','generating','zipping','completed',
+  'pending','crawling','parsing','validating','detecting','generating','validating-output','zipping','completed',
 ];
 
+const TERMINAL_STATUSES: JobStatus[] = ['completed', 'failed', 'cancelled'];
+
 function stepState(current: JobStatus, step: JobStatus): 'done' | 'active' | 'idle' | 'failed' {
-  if (current === 'failed') return 'failed';
+  if (current === 'failed' || current === 'cancelled') return 'failed';
   const ci = STATUS_ORDER.indexOf(current);
   const si = STATUS_ORDER.indexOf(step);
   if (current === 'completed' || (ci > si && ci !== -1)) return 'done';
@@ -214,7 +221,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             setJob(data);
             if (data.url) setUrl(data.url);
             if (data.format) setFormat(data.format);
-            if (data.status === 'completed' || data.status === 'failed') {
+            if (TERMINAL_STATUSES.includes(data.status)) {
               setLoading(false);
               if (data.status === 'completed') setSavedToFirebase(true);
             }
@@ -239,7 +246,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
         if (res.ok) {
           const data: JobState = await res.json();
           setJob(data);
-          if (data.status === 'completed' || data.status === 'failed') {
+          if (TERMINAL_STATUSES.includes(data.status)) {
             setLoading(false);
             localStorage.removeItem('sitecompiler_active_job_id');
             // Keep polling while a submitted payment is still awaiting admin
@@ -272,7 +279,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
   // Warn user before refreshing or navigating away during export
   useEffect(() => {
-    const isExporting = loading || (job && !['completed', 'failed'].includes(job.status));
+    const isExporting = loading || (job && !TERMINAL_STATUSES.includes(job.status));
     if (!isExporting) return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -343,8 +350,19 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     }
   };
 
+  const handleCancel = async () => {
+    if (!jobId) return;
+    if (!window.confirm('Cancel this export? Any files generated so far will be deleted.')) return;
+    try {
+      await fetch(getApiUrl(`/api/job/${jobId}/cancel`), { method: 'POST' });
+      setLoading(false);
+    } catch {
+      alert('Could not reach the cancel service. The export may have already finished.');
+    }
+  };
+
   const currentStatus = job?.status || (loading ? 'pending' : null);
-  const isActive = currentStatus && !['completed', 'failed'].includes(currentStatus);
+  const isActive = currentStatus && !TERMINAL_STATUSES.includes(currentStatus);
 
   return (
     <div className="space-y-0 text-[#9c9c9d]">
@@ -380,7 +398,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[6px] bg-[#1b1c1e] border border-[#2f3031] text-[11px] font-mono text-[#ff6363] uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />
-            SiteCompiler Engine · Next.js 15 & React TSX Output
+            SiteCompiler Engine · Next.js 16 & React TSX Output
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-[56px] font-normal tracking-[0.22px] text-[#ffffff] leading-[1.17] max-w-4xl mx-auto">
@@ -435,7 +453,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     <FormatCard
                       value="nextjs"
                       selected={format === 'nextjs'}
-                      title="Next.js 15"
+                      title="Next.js 16"
                       description="App Router + Tailwind CSS"
                       onClick={() => setFormat('nextjs')}
                     />
@@ -488,7 +506,15 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                 <span className="w-2 h-2 rounded-full bg-[#ff6363] animate-ping" />
                 <span>EXPORT IN PROGRESS — DO NOT REFRESH OR CLOSE THIS TAB FOR LIVE VIEW</span>
               </div>
-              <span className="text-[10px] text-[#9c9c9d]">Background worker active</span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-[#9c9c9d]">Background worker active</span>
+                <button
+                  onClick={handleCancel}
+                  className="px-2.5 py-1 rounded-[6px] bg-[#1b1c1e]/60 border border-[#ff6363]/40 text-[#ff6363] hover:bg-[#ff6363]/20 text-[10px] transition-colors cursor-pointer"
+                >
+                  Cancel Export
+                </button>
+              </div>
             </div>
           )}
 
@@ -501,6 +527,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                 <div className="text-sm font-medium text-[#ffffff] flex items-center gap-2">
                   {job.status === 'completed' && <span className="text-[#59d499]"><Icon.Check size={16} /></span>}
                   {job.status === 'failed'    && <span className="text-red-400"><Icon.X size={16} /></span>}
+                  {job.status === 'cancelled' && <span className="text-amber-400"><Icon.X size={16} /></span>}
                   {isActive && <Icon.Spinner size={16} />}
                   <span>{job.progressMessage}</span>
                 </div>

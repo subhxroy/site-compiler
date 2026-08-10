@@ -7,7 +7,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
-import { createJob, getJob, toPublicJob } from '../lib/jobs/store';
+import { createJob, getJob, toPublicJob, cancelExportJob, updateJob } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrfAsync } from '../lib/security/ssrf';
 
@@ -190,6 +190,74 @@ app.get('/api/job/:id/screenshot', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   fs.createReadStream(screenshotPath).pipe(res);
+});
+
+// ── Job Cancel Endpoint ────────────────────────────────────────────────────────
+app.post('/api/job/:id/cancel', (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+  const job = getJob(id);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+  const cancelled = cancelExportJob(id);
+  if (!cancelled) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+  res.status(200).json(toPublicJob(cancelled));
+});
+
+// ── Job Restart Endpoint (payment-triggered) ─────────────────────────────────
+const RESTARTABLE_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+app.post('/api/job/:id/restart', (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+  const job = getJob(id);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+  if (!RESTARTABLE_STATUSES.has(job.status)) {
+    res.status(409).json({ error: `Job is ${job.status} and cannot be restarted right now` });
+    return;
+  }
+  if (!job.paymentApproved) {
+    // Same admin free-pass header as the download endpoint.
+    const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
+    const isAdminBypass = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
+    if (!isAdminBypass) {
+      res.status(403).json({ error: 'Restart requires approved payment or admin access' });
+      return;
+    }
+  }
+
+  updateJob(
+    id,
+    {
+      status: 'pending',
+      progressMessage: 'Job queued for restart...',
+      error: undefined,
+      completedAt: undefined,
+      downloadUrl: undefined,
+    },
+    'Restart requested — re-running export pipeline'
+  );
+
+  processExportJob(id).catch((err) => {
+    console.error(`[Render Backend] Background restart ${id} failed:`, err);
+  });
+
+  const restarted = getJob(id);
+  res.status(200).json({ jobId: id, status: restarted?.status, job: restarted ? toPublicJob(restarted) : undefined });
 });
 
 // Root catch-all

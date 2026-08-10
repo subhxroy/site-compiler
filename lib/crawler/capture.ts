@@ -5,6 +5,7 @@ import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
 import { validateUrlForSsrfAsync } from '../security/ssrf';
 import { stripPlatformWatermarks } from '../parser/dom-cleaner';
+import { sanitizeCssText } from '../parser/css-parser';
 
 // Set browser path to ./pw-browsers (project-relative, survives Render build→runtime)
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
@@ -494,7 +495,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           const link = normalizeUrl(rawLink);
           const isExternalDomainInPath = /\/(www\.|linkedin\.com|twitter\.com|facebook\.com|instagram\.com|github\.com|youtube\.com)/i.test(link);
           if (!visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
-            if (!link.match(/\.(png|jpg|jpeg|gif|webp|svg|pdf|zip|mp4|css|js)($|\?)/i)) {
+            // Only crawl pages — never binary/media/data files. Anything whose
+            // path ends in a non-HTML extension (images, fonts, video, archives,
+            // config, manifests, icons, maps) is an asset, not a page. Query
+            // strings were already stripped by normalizeUrl, so `$` is safe.
+            const pathPart = new URL(link).pathname;
+            const isBinaryPath = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|webmanifest|json|xml|pdf|zip|gz|tar|7z|rar|mp[34]|webm|ogg|mov|avi|wav|flac|woff2?|ttf|otf|eot|css|js|map|wasm|txt|md|rss|atom|cur|bin|eps|psd|ai)($|\/)/i.test(pathPart);
+            if (!isBinaryPath) {
               pagesToCrawl.push(link);
               log(`Queued subpage: ${link}`);
             }
@@ -598,68 +605,40 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         // Take screenshots on entry page and save to both directory targets
         if (isEntry) {
           log('Taking true responsive breakpoint screenshots of main page...');
-          
-          // 1. Desktop Breakpoint Screenshot (1440x900)
-          try {
-            const p1 = path.join(screensDir, 'desktop.png');
-            const p2 = path.join(screensExportDir, 'desktop.png');
-            await page.screenshot({ path: p1, fullPage: false, timeout: 6000 });
-            try { fs.copyFileSync(p1, p2); } catch {}
-          } catch {
-            log('Warning: Desktop screenshot timed out');
-          }
 
-          // 2. True Tablet Breakpoint Screenshot (768x1024)
-          let tabTab: Page | null = null;
-          try {
-            tabTab = await context.newPage();
-            await tabTab.setViewportSize({ width: 768, height: 1024 });
-            await tabTab.goto(currentUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => {});
-            await new Promise((r) => setTimeout(r, 400));
-            const p1 = path.join(screensDir, 'tablet.png');
-            const p2 = path.join(screensExportDir, 'tablet.png');
-            await tabTab.screenshot({ path: p1, fullPage: false, timeout: 4000 });
-            try { fs.copyFileSync(p1, p2); } catch {}
-          } catch {
-            log('Warning: Tablet breakpoint screenshot fallback...');
+          // Resize the SAME loaded page through each breakpoint instead of
+          // opening fresh tabs: the DOM is already hydrated, media queries
+          // re-evaluate on the new width instantly, and fresh tabs on heavy
+          // SPAs (Framer) frequently failed to screenshot — which previously
+          // triggered a silent desktop-copy fallback that produced three
+          // byte-identical images.
+          const takeBreakpointShot = async (label: 'desktop' | 'tablet' | 'mobile', width: number, height: number) => {
+            const p1 = path.join(screensDir, `${label}.png`);
+            const p2 = path.join(screensExportDir, `${label}.png`);
             try {
-              const desk1 = path.join(screensDir, 'desktop.png');
-              const p1 = path.join(screensDir, 'tablet.png');
-              const p2 = path.join(screensExportDir, 'tablet.png');
-              if (fs.existsSync(desk1)) {
-                fs.copyFileSync(desk1, p1);
-                fs.copyFileSync(desk1, p2);
+              await page.setViewportSize({ width, height });
+              await page.waitForTimeout(400);
+              await page.screenshot({ path: p1, fullPage: false, timeout: 6000 });
+              fs.copyFileSync(p1, p2);
+              log(`Screenshot OK (${label} ${width}x${height})`);
+            } catch (err) {
+              // No silent fallback: surface the failure and only copy the
+              // desktop frame as a last resort, with an explicit warning.
+              const fallback = path.join(screensDir, 'desktop.png');
+              if (fs.existsSync(fallback)) {
+                fs.copyFileSync(fallback, p1);
+                fs.copyFileSync(fallback, p2);
+                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — using desktop frame as fallback`);
+              } else {
+                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — no fallback available`);
               }
-            } catch {}
-          } finally {
-            try { if (tabTab && !tabTab.isClosed()) await tabTab.close().catch(() => {}); } catch {}
-          }
+            }
+          };
 
-          // 3. True Mobile Breakpoint Screenshot (390x844)
-          let mobTab: Page | null = null;
-          try {
-            mobTab = await context.newPage();
-            await mobTab.setViewportSize({ width: 390, height: 844 });
-            await mobTab.goto(currentUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => {});
-            await new Promise((r) => setTimeout(r, 400));
-            const p1 = path.join(screensDir, 'mobile.png');
-            const p2 = path.join(screensExportDir, 'mobile.png');
-            await mobTab.screenshot({ path: p1, fullPage: false, timeout: 4000 });
-            try { fs.copyFileSync(p1, p2); } catch {}
-          } catch {
-            log('Warning: Mobile breakpoint screenshot fallback...');
-            try {
-              const desk1 = path.join(screensDir, 'desktop.png');
-              const p1 = path.join(screensDir, 'mobile.png');
-              const p2 = path.join(screensExportDir, 'mobile.png');
-              if (fs.existsSync(desk1)) {
-                fs.copyFileSync(desk1, p1);
-                fs.copyFileSync(desk1, p2);
-              }
-            } catch {}
-          } finally {
-            try { if (mobTab && !mobTab.isClosed()) await mobTab.close().catch(() => {}); } catch {}
-          }
+          await takeBreakpointShot('desktop', 1440, 900);
+          await takeBreakpointShot('tablet', 768, 1024);
+          await takeBreakpointShot('mobile', 390, 844);
+          await page.setViewportSize({ width: 1440, height: 900 });
         }
       } catch (err) {
         const crash = isBrowserCrashError(err);
@@ -721,7 +700,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     for (const s of collectedStylesheetData) {
       if (s.type === 'inline' && s.content) {
         const p = path.join(stylesDir, `style_${styleIdx++}.css`);
-        fs.writeFileSync(p, s.content, 'utf-8');
+        fs.writeFileSync(p, sanitizeCssText(s.content), 'utf-8');
         cssPaths.push(p);
       } else if (s.type === 'link' && s.href) {
         try {
@@ -730,7 +709,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           const res = await context.request.get(s.href, { timeout: 8000 });
           if (res.ok()) {
             const p = path.join(stylesDir, `style_${styleIdx++}.css`);
-            fs.writeFileSync(p, await res.text(), 'utf-8');
+            fs.writeFileSync(p, sanitizeCssText(await res.text()), 'utf-8');
             cssPaths.push(p);
           }
         } catch {}

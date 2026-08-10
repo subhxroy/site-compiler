@@ -6,7 +6,7 @@ import { softwareApplicationSchema, faqPageSchema } from '@/lib/seo/schema';
 export const metadata = buildMetadata({
   title: 'SiteCompiler — Convert Any Website to Clean React, Next.js & HTML',
   description:
-    'Crawl any published website (Framer, Webflow, Wix) and compile it into clean, editable Static HTML, React TSX, or Next.js 15 + Tailwind in a single ZIP.',
+    'Crawl any published website (Framer, Webflow, Wix) and compile it into clean, editable Static HTML, React TSX, or Next.js 16 + Tailwind in a single ZIP.',
   path: '/',
 });
 
@@ -22,9 +22,9 @@ const homeFaqs = [
       'The ZIP includes all captured subpages (index.html, work.html, blog.html), all local assets (images, WOFF2 fonts, SVG icons, video files), consolidated styles.css, script.js animation shim v3.0, and a README.md with deployment steps.',
   },
   {
-    question: 'Can I convert Framer or Webflow sites into Next.js 15 App Router?',
+    question: 'Can I convert Framer or Webflow sites into Next.js 16 App Router?',
     answer:
-      'Yes. Select Next.js 15 as your output architecture. SiteCompiler reconstructs the site into a complete Next.js 15 project structure with App Router pages, TypeScript components, and Tailwind CSS configuration.',
+      'Yes. Select Next.js 16 as your output architecture. SiteCompiler reconstructs the site into a complete Next.js 16 project structure with App Router pages, TypeScript components, and Tailwind CSS configuration.',
   },
   {
     question: 'Are external fonts and media assets saved locally?',

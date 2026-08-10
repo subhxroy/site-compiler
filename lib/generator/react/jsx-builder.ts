@@ -25,9 +25,14 @@ function convertCheerioElementToJsx(
   depth: number = 0
 ): string {
   if (element.type === 'text') {
-    const text = $(element).text().trim();
+    const text = $(element).text();
     if (!text) return '';
-    return text.replace(/[{}]/g, (m) => (m === '{' ? '&#123;' : '&#125;'));
+    // JSX text cannot contain raw `{`/`}` — wrap them in string expressions so
+    // they render literally instead of being eaten as a JSX expression. HTML
+    // entities are NOT decoded in JSX text, so &#123; would print literally.
+    // Single pass with a callback — a second chained replace would re-escape
+    // the `}` we just inserted.
+    return text.replace(/[{}]/g, (m) => (m === '{' ? "{'{'}" : "{'}'}"));
   }
 
   if (element.type === 'comment') {
@@ -69,6 +74,9 @@ function convertCheerioElementToJsx(
     attribSeen.add(jsxKey);
 
     if (jsxKey === 'style') {
+      // Convert inline styles to Tailwind utilities. If conversion is unsafe
+      // (url(), quotes, complex values) it returns '' and we keep the original
+      // style attribute so no styling is silently lost.
       const twClasses = convertStyleStringtoTailwind(val);
       if (twClasses) {
         const safeTw = twClasses.replace(/"/g, "'");
@@ -82,11 +90,15 @@ function convertCheerioElementToJsx(
           attributes.push(`className="${safeTw}"`);
           attribSeen.add('className');
         }
+      } else {
+        attributes.push(`style="${val.replace(/"/g, '\\"')}"`);
       }
     } else if (val === '' || val === undefined) {
       attributes.push(jsxKey);
     } else {
-      const safeVal = val.replace(/"/g, '&quot;');
+      // JSX attribute string literals support backslash escapes (unlike HTML
+      // entities, which are NOT decoded in JSX and would print literally).
+      const safeVal = val.replace(/"/g, '\\"');
       attributes.push(`${jsxKey}="${safeVal}"`);
     }
   }

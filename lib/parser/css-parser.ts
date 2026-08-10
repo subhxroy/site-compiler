@@ -2,6 +2,21 @@ import postcss from 'postcss';
 import * as fs from 'fs';
 import { ProcessedAssetMap } from './asset-pipeline';
 
+/**
+ * Strip NUL bytes, BOMs, and zero-width padding that some servers/CDNs leave
+ * in CSS served with UTF-16/UTF-32 byte order marks. The browser's DOM keeps
+ * those NUL chars in `style.textContent`, Playwright serializes them back, and
+ * postcss hard-crashes with `CssSyntaxError: Unknown word` mid-declaration.
+ */
+export function sanitizeCssText(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .replace(/^\uFEFF/, '')
+    .replace(/\u0000/g, '')
+    .replace(/^\x00/, '')
+    .replace(/\x00$/, '');
+}
+
 export interface CssRuleInfo {
   selector: string;
   declarations: string;
@@ -22,12 +37,12 @@ export function parseAndConsolidateCss(
   // Read all CSS files
   for (const filePath of cssFilePaths) {
     if (fs.existsSync(filePath)) {
-      combinedCss += fs.readFileSync(filePath, 'utf-8') + '\n';
+      combinedCss += sanitizeCssText(fs.readFileSync(filePath, 'utf-8')) + '\n';
     }
   }
 
   // Parse CSS with PostCSS
-  const root = postcss.parse(combinedCss);
+  const root = postcss.parse(sanitizeCssText(combinedCss));
   const classMap = new Map<string, string>();
   const rulesMap = new Map<string, string[]>(); // declarationString -> list of selectors sharing exact same CSS
 

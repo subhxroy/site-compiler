@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
               fontFamily: 'monospace',
             }}
           >
-            <span>Framer · Webflow · Static HTML · React · Next.js 15</span>
+            <span>Framer · Webflow · Static HTML · React · Next.js 16</span>
             <span>https://sitecompiler.com</span>
           </div>
         </div>

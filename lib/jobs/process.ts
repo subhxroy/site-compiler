@@ -3,7 +3,15 @@ import { buildHtmlExport } from '../generator/html/build';
 import { detectSections } from '../detector/section-detector';
 import { buildNextJsExport } from '../generator/nextjs/page-assembler';
 import { createJobZip } from '../zip/build-zip';
-import { getJob, updateJob } from './store';
+import { getJob, isJobActive, updateJob } from './store';
+import { validateHtmlOutput, validateNextOutput, validateZip } from './validate';
+import * as path from 'path';
+
+function throwIfCancelled(jobId: string): void {
+  if (!isJobActive(jobId)) {
+    throw new Error('Export was cancelled.');
+  }
+}
 
 export async function processExportJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
@@ -22,6 +30,8 @@ export async function processExportJob(jobId: string): Promise<void> {
       url: job.url,
       onProgress: (msg) => updateJob(jobId, { progressMessage: msg }, msg),
     });
+
+    throwIfCancelled(jobId);
 
     updateJob(jobId, {
       screenshots: {
@@ -44,6 +54,20 @@ export async function processExportJob(jobId: string): Promise<void> {
       pages: crawlResult.pages,
     });
 
+    throwIfCancelled(jobId);
+
+    // ── Phase 2b: Validate HTML output ──────────────────────────────────────
+    updateJob(
+      jobId,
+      { status: 'validating', progressMessage: 'Validating HTML output...' },
+      'Phase 2b: Validating HTML output'
+    );
+
+    const htmlCheck = validateHtmlOutput(htmlResult.outputDir);
+    if (!htmlCheck.ok) {
+      throw new Error(`HTML output validation failed: ${htmlCheck.errors.join('; ')}`);
+    }
+
     // ── Phase 3: Section Detection ──────────────────────────────────────────
     updateJob(
       jobId,
@@ -56,6 +80,8 @@ export async function processExportJob(jobId: string): Promise<void> {
       htmlResult.cleanedHtml || '',
       crawlResult.screenshotPaths.desktop
     );
+
+    throwIfCancelled(jobId);
 
     // ── Phase 4: Code Generation (Next.js / React only) ────────────────────
     updateJob(
@@ -72,6 +98,23 @@ export async function processExportJob(jobId: string): Promise<void> {
       });
     }
 
+    throwIfCancelled(jobId);
+
+    // ── Phase 4b: Validate generated output (Next.js / React only) ─────────
+    if (job.format === 'nextjs' || job.format === 'react') {
+      updateJob(
+        jobId,
+        { status: 'validating-output', progressMessage: 'Validating generated project...' },
+        'Phase 4b: Validating generated project scaffold'
+      );
+
+      const nextDir = path.resolve(process.cwd(), 'exports', jobId, 'output', 'nextjs-export');
+      const genCheck = validateNextOutput(nextDir);
+      if (!genCheck.ok) {
+        throw new Error(`Generated project validation failed: ${genCheck.errors.join('; ')}`);
+      }
+    }
+
     // ── Phase 5: ZIP with README ────────────────────────────────────────────
     updateJob(
       jobId,
@@ -86,14 +129,28 @@ export async function processExportJob(jobId: string): Promise<void> {
       format: job.format,
       sourceUrl: job.url,
       title,
+      pageCount: htmlResult.pageCount || (crawlResult.pages && crawlResult.pages.length) || 1,
+      assetCount: htmlResult.assetCount || 0,
     });
+
+    // ── Phase 5b: Validate the ZIP before claiming success ──────────────────
+    updateJob(
+      jobId,
+      { status: 'validating-output', progressMessage: 'Validating ZIP archive...' },
+      'Phase 5b: Validating ZIP archive'
+    );
+
+    const zipCheck = validateZip(zipPath);
+    if (!zipCheck.ok) {
+      throw new Error(`ZIP validation failed: ${zipCheck.errors.join('; ')}`);
+    }
 
     // Measure the resulting archive
     const { statSync } = await import('fs');
     const stat = statSync(zipPath);
     const zipSizeKb = Math.round(stat.size / 1024);
 
-    const pageCount = (crawlResult.pages && crawlResult.pages.length) || 1;
+    const pageCount = htmlResult.pageCount || (crawlResult.pages && crawlResult.pages.length) || 1;
     const amount = Math.max(20, Math.ceil(pageCount / 10) * 20);
 
     updateJob(
@@ -111,6 +168,11 @@ export async function processExportJob(jobId: string): Promise<void> {
       `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
     );
   } catch (err: unknown) {
+    const jobAfter = getJob(jobId);
+    if (jobAfter && jobAfter.status === 'cancelled') {
+      console.log(`[Job ${jobId}] Skipping failure handling — job was cancelled.`);
+      return;
+    }
     console.error(`[Job ${jobId}] Failed:`, err);
     const errMsg = (err as Error).message || String(err);
     updateJob(
