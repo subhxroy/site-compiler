@@ -633,20 +633,27 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             const p2 = path.join(screensExportDir, `${label}.png`);
             try {
               await page.setViewportSize({ width, height });
-              await page.waitForTimeout(300);
-              await page.screenshot({ path: p1, fullPage: false, timeout: 3000 });
+              await page.waitForTimeout(200);
+
+              // Flush font loading gracefully so Playwright doesn't stall waiting for fonts
+              try {
+                await page.evaluate(() => Promise.race([
+                  document.fonts.ready,
+                  new Promise((r) => setTimeout(r, 1000)),
+                ]));
+              } catch {}
+
+              await page.screenshot({ path: p1, fullPage: false, timeout: 8000, animations: 'disabled' });
               fs.copyFileSync(p1, p2);
               log(`Screenshot OK (${label} ${width}x${height})`);
             } catch (err) {
-              // No silent fallback: surface the failure and only copy the
-              // desktop frame as a last resort, with an explicit warning.
               const fallback = path.join(screensDir, 'desktop.png');
-              if (fs.existsSync(fallback)) {
+              if (fs.existsSync(fallback) && fallback !== p1) {
                 fs.copyFileSync(fallback, p1);
                 fs.copyFileSync(fallback, p2);
                 log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — using desktop frame as fallback`);
               } else {
-                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — no fallback available`);
+                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — using server fallback preview`);
               }
             }
           };

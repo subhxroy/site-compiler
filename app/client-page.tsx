@@ -319,7 +319,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
         } else {
           consecutiveErrors++;
           console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors})`);
-          if (consecutiveErrors >= 15) {
+          if (consecutiveErrors >= 30) {
             setJob((prev) =>
               prev
                 ? {
@@ -336,8 +336,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
         }
       } catch (pollErr) {
         consecutiveErrors++;
-        console.error(`[POLL DEBUG] Network error polling status:`, pollErr);
-        if (consecutiveErrors >= 15) {
+        console.error(`[POLL DEBUG] Network error polling status (attempt ${consecutiveErrors}/30):`, pollErr);
+        if (consecutiveErrors >= 30) {
           setJob((prev) =>
             prev
               ? {
@@ -352,7 +352,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           clearInterval(iv);
         }
       }
-    }, 1000);
+    }, 1500);
 
     return () => clearInterval(iv);
   }, [jobId]);
