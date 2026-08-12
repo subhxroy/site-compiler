@@ -4,8 +4,11 @@ import { getFirestore } from 'firebase-admin/firestore';
 import * as path from 'path';
 import * as fs from 'fs';
 
+let configured = false;
+
 function initAdmin() {
   if (getApps().length > 0) {
+    configured = true;
     return getApp();
   }
 
@@ -15,6 +18,7 @@ function initAdmin() {
   if (fs.existsSync(localKeyPath)) {
     try {
       const serviceAccount = JSON.parse(fs.readFileSync(localKeyPath, 'utf-8'));
+      configured = true;
       return initializeApp({
         credential: cert(serviceAccount),
         projectId: 'site-compiler',
@@ -28,6 +32,7 @@ function initAdmin() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      configured = true;
       return initializeApp({
         credential: cert(serviceAccount),
         projectId: 'site-compiler',
@@ -41,6 +46,7 @@ function initAdmin() {
   console.warn(
     '[Firebase Admin] No service account found. Set FIREBASE_SERVICE_ACCOUNT_KEY env var or place the JSON file in project root. Firestore operations will fail.'
   );
+  configured = false;
   return initializeApp({
     projectId: 'site-compiler',
   });
@@ -49,3 +55,5 @@ function initAdmin() {
 export const adminApp = initAdmin();
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
+export const isFirebaseAdminConfigured = () => configured;
+

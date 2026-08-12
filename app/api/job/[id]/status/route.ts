@@ -27,13 +27,18 @@ export async function GET(
       // written on the Netlify side. Overlay the durable Firestore approval
       // record so the client shows the correct pay/approved state in prod.
       if (backendRes.ok && data && typeof data === 'object') {
-        const approval = await getApprovalState(id);
-        if (approval) {
-          data.paymentSubmitted = approval.paymentSubmitted;
-          data.paymentApproved = approval.paymentApproved;
+        try {
+          const approval = await getApprovalState(id);
+          if (approval) {
+            data.paymentSubmitted = approval.paymentSubmitted;
+            data.paymentApproved = approval.paymentApproved;
+          }
+        } catch (approvalErr) {
+          console.warn('[Status Route] Firestore approval state check skipped:', approvalErr);
         }
       }
       return NextResponse.json(data, { status: backendRes.status });
+
     } catch (proxyError) {
       return NextResponse.json(
         { error: `Backend service unreachable: ${errorMessage(proxyError)}` },

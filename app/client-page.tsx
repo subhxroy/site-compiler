@@ -214,26 +214,33 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setJobId(savedJobId);
       setLoading(true);
-      fetch(getApiUrl(`/api/job/${savedJobId}/status`))
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: JobState | null) => {
-          if (data && data.id) {
-            setJob(data);
-            if (data.url) setUrl(data.url);
-            if (data.format) setFormat(data.format);
-            if (TERMINAL_STATUSES.includes(data.status)) {
-              setLoading(false);
-              if (data.status === 'completed') setSavedToFirebase(true);
-            }
-          } else {
-            setLoading(false);
-            localStorage.removeItem('sitecompiler_active_job_id');
+      const fetchStatus = async () => {
+        try {
+          let res = await fetch(getApiUrl(`/api/job/${savedJobId}/status`));
+          if (!res.ok) {
+            res = await fetch(getDirectBackendUrl(`/api/job/${savedJobId}/status`));
           }
-        })
-        .catch(() => {
+          if (res.ok) {
+            const data: JobState = await res.json();
+            if (data && data.id) {
+              setJob(data);
+              if (data.url) setUrl(data.url);
+              if (data.format) setFormat(data.format);
+              if (TERMINAL_STATUSES.includes(data.status)) {
+                setLoading(false);
+                if (data.status === 'completed') setSavedToFirebase(true);
+              }
+              return;
+            }
+          }
           setLoading(false);
           localStorage.removeItem('sitecompiler_active_job_id');
-        });
+        } catch {
+          setLoading(false);
+          localStorage.removeItem('sitecompiler_active_job_id');
+        }
+      };
+      fetchStatus();
     }
   }, []);
 
@@ -242,7 +249,10 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     if (!jobId) return;
     const iv = setInterval(async () => {
       try {
-        const res = await fetch(getApiUrl(`/api/job/${jobId}/status`));
+        let res = await fetch(getApiUrl(`/api/job/${jobId}/status`));
+        if (!res.ok) {
+          res = await fetch(getDirectBackendUrl(`/api/job/${jobId}/status`));
+        }
         if (res.ok) {
           const data: JobState = await res.json();
           setJob(data);
@@ -259,6 +269,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     }, 1000);
     return () => clearInterval(iv);
   }, [jobId]);
+
 
   // Save to Firebase Firestore when completed and user is logged in
   useEffect(() => {

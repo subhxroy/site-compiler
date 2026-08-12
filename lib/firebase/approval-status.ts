@@ -1,4 +1,4 @@
-import { adminDb } from './admin';
+import { adminDb, isFirebaseAdminConfigured } from './admin';
 
 /**
  * Payment approval is recorded durably in Firestore (collection
@@ -14,6 +14,9 @@ export interface ApprovalState {
 }
 
 export async function getApprovalState(jobId: string): Promise<ApprovalState | null> {
+  if (!isFirebaseAdminConfigured()) {
+    return null;
+  }
   try {
     const doc = await adminDb.collection('export_approvals').doc(jobId).get();
     if (!doc.exists) return null;
@@ -30,3 +33,4 @@ export async function getApprovalState(jobId: string): Promise<ApprovalState | n
     return null;
   }
 }
+
