@@ -8,8 +8,9 @@ services:
     region: oregon
     # Install browsers INTO the project dir (./pw-browsers) — the ONLY directory that
     # survives between Render's build and runtime phases. /opt/render/.cache does NOT persist.
-    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers npx playwright install chromium
-    startCommand: npm run start:backend
+    # Only chromium is needed; installing all browsers wastes ~320MB and slows builds.
+    buildCommand: npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers npx playwright install chromium --with-deps
+    startCommand: npm run start
     healthCheckPath: /health
     autoDeploy: true
     envVars:

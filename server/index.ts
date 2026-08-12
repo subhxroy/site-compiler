@@ -15,14 +15,20 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// ── Security Headers Middleware ─────────────────────────────────────────────
-app.use((_req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
+// ── Health Endpoints (registered BEFORE CORS so Render's scanner always gets a 200) ──
+const healthHandler = (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.status(200).json({
+    status: 'ok',
+    service: 'sitecompiler-backend',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    memoryUsage: process.memoryUsage(),
+  });
+};
+
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // CORS configuration — allow known origins only (local dev + configured domains).
 // The Render backend is reached server-to-server from the Next.js API routes in
@@ -46,13 +52,21 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 app.use(
   cors({
     origin: isAllowedOrigin,
-    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
 app.use(express.json());
+
+// ── Security Headers Middleware ─────────────────────────────────────────────
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // ── Express Rate Limiting (15 requests per minute for exports) ───────────────
 const exportRateLimiter = rateLimit({
@@ -62,21 +76,6 @@ const exportRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too Many Requests', message: 'Rate limit exceeded. Please wait 60 seconds before creating a new export.' },
 });
-
-// ── Render Health Router Endpoint ─────────────────────────────────────────────
-const healthHandler = (_req: Request, res: Response) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.status(200).json({
-    status: 'ok',
-    service: 'sitecompiler-backend',
-    timestamp: new Date().toISOString(),
-    uptimeSeconds: Math.floor(process.uptime()),
-    memoryUsage: process.memoryUsage(),
-  });
-};
-
-app.get('/health', healthHandler);
-app.get('/api/health', healthHandler);
 
 // ── Export Endpoint ────────────────────────────────────────────────────────────
 app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) => {
@@ -269,6 +268,16 @@ app.get('*', (_req: Request, res: Response) => {
     healthCheck: '/health',
     exportEndpoint: '/api/export',
   });
+});
+
+// ── Process-level error guards (prevent silent crash → port disappears) ───────
+process.on('uncaughtException', (err) => {
+  console.error('[SiteCompiler Backend] uncaughtException:', err);
+  // Keep the process alive — a single failed job should not kill the server.
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[SiteCompiler Backend] unhandledRejection:', reason);
 });
 
 app.listen(PORT, HOST, () => {
