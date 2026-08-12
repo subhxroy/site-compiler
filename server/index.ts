@@ -12,7 +12,8 @@ import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrfAsync } from '../lib/security/ssrf';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // ── Security Headers Middleware ─────────────────────────────────────────────
 app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -270,7 +271,7 @@ app.get('*', (_req: Request, res: Response) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[SiteCompiler Backend] Express server running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`[SiteCompiler Backend] Express server running on ${HOST}:${PORT}`);
   console.log(`[Health Router] Endpoint active at http://localhost:${PORT}/health`);
 });
