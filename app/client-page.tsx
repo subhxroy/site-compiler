@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { getApiUrl } from '@/lib/api-config';
+import { getApiUrl, getDirectBackendUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
 import { PaywallModal } from '@/components/paywall-modal';
@@ -318,7 +318,9 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
       while (attempts < 2 && !success) {
         attempts++;
-        const res = await fetch(getApiUrl('/api/export'), {
+        // Call Render directly — bypasses Netlify's 10s serverless timeout.
+        // Status, cancel, and download calls still go through /api proxy (they're fast).
+        const res = await fetch(getDirectBackendUrl('/api/export'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: url.trim(), format }),

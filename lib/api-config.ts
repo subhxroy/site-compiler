@@ -17,6 +17,14 @@ export const API_BASE_URL = (
   (process.env.NODE_ENV === 'development' ? '' : 'https://site-compiler.onrender.com')
 ).replace(/\/$/, '');
 
+// The Render backend URL exposed to the browser.
+// Used for export job creation only — bypasses Netlify's 10s serverless timeout.
+// In local dev this is empty, so calls fall through to the relative /api proxy.
+export const RENDER_BACKEND_URL = (
+  process.env.NEXT_PUBLIC_RENDER_BACKEND_URL ||
+  (process.env.NODE_ENV === 'development' ? '' : 'https://site-compiler.onrender.com')
+).replace(/\/$/, '');
+
 export function getApiUrl(path: string): string {
   if (!path) return '';
   if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -31,6 +39,20 @@ export function getApiUrl(path: string): string {
   }
 
   return API_BASE_URL ? `${API_BASE_URL}${cleanPath}` : cleanPath;
+}
+
+/**
+ * Returns the direct Render backend URL for browser-side requests that must
+ * bypass Netlify's 10-second serverless function timeout (e.g. export job creation).
+ * Falls back to the relative Netlify proxy path when RENDER_BACKEND_URL is not set.
+ */
+export function getDirectBackendUrl(path: string): string {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (RENDER_BACKEND_URL) {
+    return `${RENDER_BACKEND_URL}${cleanPath}`;
+  }
+  // Local dev fallback: use relative path (Next.js dev server handles it in-process)
+  return cleanPath;
 }
 
 export function isServerlessEnvironment(): boolean {

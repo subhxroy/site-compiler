@@ -30,22 +30,41 @@ const healthHandler = (_req: Request, res: Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// CORS configuration — allow known origins only (local dev + configured domains).
-// The Render backend is reached server-to-server from the Next.js API routes in
-// production, so reflecting arbitrary browser origins with credentials is not
-// needed and is a latent vulnerability. Custom origins can be added via the
-// CORS_ORIGINS env var (comma-separated list of origins).
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return false;
+// CORS configuration — allow known origins only (local dev + Netlify frontend + configured domains).
+// The browser now calls the Render backend directly for export job creation (to bypass
+// Netlify's 10s serverless timeout). All other API calls proxy through Netlify.
+// Custom origins can be added via the CORS_ORIGINS env var (comma-separated list).
+function isAllowedOrigin(origin: string | undefined, callback: (err: Error | null, allow: boolean) => void): void {
+  if (!origin) {
+    // Server-to-server request (no Origin header) — always allow (Netlify proxy calls)
+    callback(null, true);
+    return;
+  }
   try {
     const u = new URL(origin);
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
+    // Always allow local dev
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      callback(null, true);
+      return;
+    }
+    // Allow the configured frontend URL (set in Render env as FRONTEND_URL)
+    const frontendUrl = process.env.FRONTEND_URL || '';
+    if (frontendUrl) {
+      try {
+        if (new URL(frontendUrl).origin === u.origin) {
+          callback(null, true);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    // Allow any extra origins from CORS_ORIGINS env var
     const extra = (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-    return extra.some((e) => {
+    const allowed = extra.some((e) => {
       try { return new URL(e).origin === u.origin; } catch { return false; }
     });
+    callback(null, allowed);
   } catch {
-    return false;
+    callback(null, false);
   }
 }
 
