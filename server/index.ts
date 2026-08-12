@@ -155,7 +155,7 @@ app.get('/api/job/:id/status', (req: Request, res: Response) => {
 });
 
 // ── Job Download Endpoint ──────────────────────────────────────────────────────
-app.get('/api/job/:id/download', (req: Request, res: Response) => {
+app.get('/api/job/:id/download', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
     res.status(400).json({ error: 'Invalid job id' });
@@ -169,12 +169,31 @@ app.get('/api/job/:id/download', (req: Request, res: Response) => {
   }
 
   if (!job.paymentApproved) {
-    // Admin free-pass: the Netlify download route verifies the Firebase admin
-    // ID token, then forwards this shared-secret header. Never trust browsers —
-    // only the frontend serverless function knows ADMIN_BYPASS_SECRET.
     const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
-    const isAdminBypass = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
-    if (!isAdminBypass) {
+    const isAdminBypassHeader = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
+
+    let isVerifiedAdminToken = false;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      try {
+        const decoded = await adminAuth.verifyIdToken(token);
+        if (decoded && decoded.email) {
+          const e = decoded.email.toLowerCase().trim();
+          const allowlist = (process.env.ADMIN_EMAILS || 'contact.subhroy-1@gmail.com,subhroy,whysaurjya')
+            .split(',')
+            .map((x) => x.trim().toLowerCase())
+            .filter(Boolean);
+          if (allowlist.some((a) => e.includes(a))) {
+            isVerifiedAdminToken = true;
+          }
+        }
+      } catch (tokenErr) {
+        console.warn('[Download API] Admin ID token verification warning:', tokenErr);
+      }
+    }
+
+    if (!isAdminBypassHeader && !isVerifiedAdminToken) {
       res.status(403).json({ error: 'Export pending admin payment approval' });
       return;
     }

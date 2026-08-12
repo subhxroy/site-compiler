@@ -300,15 +300,16 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
-      const gotoTimeout = isEntry ? 20000 : 10000;
-      const commitTimeout = isEntry ? 15000 : 8000;
+      const gotoTimeout = isEntry ? 20000 : 15000;
 
       try {
         try {
           await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
         } catch {
-          log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, falling back to commit load...`);
-          await page.goto(currentUrl, { waitUntil: 'commit', timeout: commitTimeout });
+          log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, checking DOM content fallback...`);
+          try {
+            await page.goto(currentUrl, { waitUntil: 'load', timeout: 10000 });
+          } catch {}
         }
         
         try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
@@ -633,7 +634,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             const p2 = path.join(screensExportDir, `${label}.png`);
             try {
               await page.setViewportSize({ width, height });
-              await page.waitForTimeout(200);
+              await page.waitForTimeout(300);
 
               // Flush font loading gracefully so Playwright doesn't stall waiting for fonts
               try {
@@ -643,7 +644,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
                 ]));
               } catch {}
 
-              await page.screenshot({ path: p1, fullPage: false, timeout: 8000, animations: 'disabled' });
+              await page.screenshot({ path: p1, fullPage: false, timeout: 10000 });
               fs.copyFileSync(p1, p2);
               log(`Screenshot OK (${label} ${width}x${height})`);
             } catch (err) {
