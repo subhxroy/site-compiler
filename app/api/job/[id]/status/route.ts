@@ -13,6 +13,15 @@ export async function GET(
   if (API_BASE_URL) {
     try {
       const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/status`);
+      const contentType = backendRes.headers.get('content-type') || '';
+      
+      if (!contentType.includes('application/json')) {
+        return NextResponse.json(
+          { error: 'Backend server is waking up...', isColdStart: true },
+          { status: 503 }
+        );
+      }
+
       const data = await backendRes.json();
       // The Render backend's in-memory job store never sees the payment state
       // written on the Netlify side. Overlay the durable Firestore approval
@@ -32,6 +41,7 @@ export async function GET(
       );
     }
   }
+
 
   const job = getJob(id);
 

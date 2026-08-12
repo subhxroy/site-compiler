@@ -313,28 +313,54 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     setTab('preview');
     setSavedToFirebase(false);
     try {
-      const res = await fetch(getApiUrl('/api/export'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), format }),
-      });
-      const data = await res.json();
-      if (res.ok && data.jobId) {
-        setJobId(data.jobId);
-        localStorage.setItem('sitecompiler_active_job_id', data.jobId);
-        if (typeof window !== 'undefined') {
-          const newUrl = new URL(window.location.href);
-          newUrl.searchParams.set('jobId', data.jobId);
-          window.history.replaceState({}, '', newUrl.toString());
+      let attempts = 0;
+      let success = false;
+
+      while (attempts < 2 && !success) {
+        attempts++;
+        const res = await fetch(getApiUrl('/api/export'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url.trim(), format }),
+        });
+
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
         }
-      } else {
-        alert(data.error || 'Failed to start export');
-        setLoading(false);
+
+        if (res.ok && data?.jobId) {
+          success = true;
+          setJobId(data.jobId);
+          localStorage.setItem('sitecompiler_active_job_id', data.jobId);
+          if (typeof window !== 'undefined') {
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('jobId', data.jobId);
+            window.history.replaceState({}, '', newUrl.toString());
+          }
+          break;
+        } else {
+          // If Render backend is spinning up from cold start, trigger a health ping & retry once
+          if ((res.status === 502 || res.status === 503 || data?.isColdStart) && attempts < 2) {
+            console.log('[SiteCompiler] Backend warming up from cold start, retrying in 3 seconds...');
+            fetch(getApiUrl('/health')).catch(() => {});
+            await new Promise((r) => setTimeout(r, 3000));
+            continue;
+          }
+
+          const errorMsg = data?.error || data?.message || (res.status === 503 || res.status === 502 ? 'Render backend server is spinning up from cold start. Please click Export again in 5 seconds.' : 'Failed to start export. Please try again.');
+          alert(errorMsg);
+          setLoading(false);
+          return;
+        }
       }
-    } catch {
-      alert('Network error — is the server running?');
+    } catch (err: unknown) {
+      alert(`Network error: ${(err as Error)?.message || 'Is the server running?'}`);
       setLoading(false);
     }
+
   };
 
   const handleReset = () => {
