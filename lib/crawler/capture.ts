@@ -270,10 +270,18 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const allDiscoveredAssetUrls = new Set<string>();
   const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
 
+  const crawlStartTime = Date.now();
+  const MAX_CRAWL_DURATION_MS = 2.5 * 60 * 1000; // 2.5 min max budget for Phase 1 crawl
+
   try {
     let pageCount = 0;
 
     while (pagesToCrawl.length > 0 && pageCount < maxPages) {
+      if (Date.now() - crawlStartTime > MAX_CRAWL_DURATION_MS && capturedPages.length > 0) {
+        log(`[Crawl Watchdog] Crawl duration limit (2.5 min) reached. Finalizing capture with ${capturedPages.length} page(s)...`);
+        break;
+      }
+
       page = await ensureActivePage();
 
       const rawCurrentUrl = pagesToCrawl.shift()!;
@@ -292,12 +300,15 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
+      const gotoTimeout = isEntry ? 20000 : 10000;
+      const commitTimeout = isEntry ? 15000 : 8000;
+
       try {
         try {
-          await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
         } catch {
           log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, falling back to commit load...`);
-          await page.goto(currentUrl, { waitUntil: 'commit', timeout: 15000 });
+          await page.goto(currentUrl, { waitUntil: 'commit', timeout: commitTimeout });
         }
         
         try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
@@ -306,9 +317,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         log(`[Agent Engine] Inspecting DOM & awaiting preloader resolution on ${currentUrl}...`);
 
         try {
-          await page.evaluate(async () => {
+          await page.evaluate(async (isEntryPage: boolean) => {
             const startTime = Date.now();
-            const maxWait = 7500; // Wait up to 7.5s max for GSAP / Framer preloader animations
+            const maxWait = isEntryPage ? 7500 : 2500; // Wait up to 7.5s for entry, 2.5s for subpages
 
             const preloaderSelectors = [
               '.loader-wrap', '.loader-wrap-heading', '.preloader', '#preloader',
@@ -364,7 +375,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
                 (el as HTMLElement).style.display = 'block';
               } catch {}
             });
-          });
+          }, isEntry);
         } catch {}
 
         await new Promise((r) => setTimeout(r, 600));
@@ -622,8 +633,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             const p2 = path.join(screensExportDir, `${label}.png`);
             try {
               await page.setViewportSize({ width, height });
-              await page.waitForTimeout(400);
-              await page.screenshot({ path: p1, fullPage: false, timeout: 6000 });
+              await page.waitForTimeout(300);
+              await page.screenshot({ path: p1, fullPage: false, timeout: 3000 });
               fs.copyFileSync(p1, p2);
               log(`Screenshot OK (${label} ${width}x${height})`);
             } catch (err) {
@@ -650,17 +661,21 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         const tries = retryCounts.get(currentUrl) || 0;
         log(`Warning: Page crawl ${crash ? 'crash' : 'error'} for ${currentUrl}: ${err}`);
 
-        if (tries < MAX_PAGE_ATTEMPTS) {
+        // Only retry entry page or subpages if browser actually crashed.
+        // Standard subpage timeouts are logged and skipped to save time budget.
+        const allowRetry = isEntry ? tries < MAX_PAGE_ATTEMPTS : (crash && tries < 1);
+
+        if (allowRetry) {
           retryCounts.set(currentUrl, tries + 1);
           pagesToCrawl.push(currentUrl);
-          log(`[Retry ${tries + 1}/${MAX_PAGE_ATTEMPTS}] Re-queuing ${currentUrl} after ${crash ? 'browser crash' : 'crawl error'}...`);
+          log(`[Retry ${tries + 1}] Re-queuing ${currentUrl} after ${crash ? 'browser crash' : 'crawl error'}...`);
 
           if (crash) {
             try { if (browser) await browser.close().catch(() => {}); } catch {}
             await initBrowserAndContext();
           }
         } else {
-          log(`Dropping ${currentUrl} after ${MAX_PAGE_ATTEMPTS} failed attempts.`);
+          log(`Skipping subpage ${currentUrl} after crawl ${crash ? 'crash' : 'timeout'}.`);
         }
 
         try {
