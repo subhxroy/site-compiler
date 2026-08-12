@@ -44,6 +44,27 @@ function logAiResponse(aiLogsDir: string, filename: string, content: string) {
   }
 }
 
+async function runWithBoundedConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  const executing: Promise<void>[] = [];
+  for (const item of items) {
+    const p = Promise.resolve().then(() => fn(item));
+    executing.push(p);
+    if (limit <= items.length) {
+      const e: Promise<void> = p.then(() => {
+        executing.splice(executing.indexOf(e), 1);
+      });
+    }
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+}
+
 export async function detectSections(
   jobId: string,
   cleanedHtml: string,
@@ -60,7 +81,7 @@ export async function detectSections(
     return fallbackSectionDetection(cleanedHtml, aiLogsDir);
   }
 
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = new Anthropic({ apiKey, timeout: 15000, maxRetries: 2 });
   const trimmedHtml = trimDomForAi(cleanedHtml);
 
   // Prepare image block if screenshot exists
@@ -139,8 +160,8 @@ Return ONLY JSON. Do not include markdown code block formatting or extra text.`;
 
     const globalClassRenameMap: Record<string, string> = {};
 
-    // Narrower AI pass per section to rename hashed CSS classes
-    for (const section of parsedSections) {
+    // Bounded AI concurrency (max 3 concurrent calls) to prevent request bursts
+    await runWithBoundedConcurrency(parsedSections, 3, async (section) => {
       try {
         const renamePrompt = `Given the section "${section.name}" with description "${section.description}", propose semantic CSS class names for any hashed/generated class names (e.g. ".css-2ff83b", ".framer-1234").
 Return a JSON object mapping old class name (without leading dot) to new semantic class name (e.g. {"css-2ff83b": "hero-title"}).
@@ -161,9 +182,9 @@ Return ONLY valid JSON.`;
         section.classRenameMap = sectionMap;
         Object.assign(globalClassRenameMap, sectionMap);
       } catch (err) {
-        console.warn(`Class rename AI pass failed for section ${section.name}:`, err);
+        console.warn(`Class rename AI pass skipped for section ${section.name}:`, err);
       }
-    }
+    });
 
     return {
       sections: parsedSections,

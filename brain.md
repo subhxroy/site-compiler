@@ -112,6 +112,8 @@ codify/
 
 ### `render.yaml`
 - Backend service `site-compiler` (Express). `PLAYWRIGHT_BROWSERS_PATH=./pw-browsers`, `healthCheckPath: /health`, `ADMIN_BYPASS_SECRET` (Render secret, **`sync: false`** → not copied from Netlify; must manually match `BACKEND_ADMIN_SECRET`). Fail-closed: if unset, the admin bypass header never matches.
+- `buildCommand`: `npm install --fetch-retries=5 && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers npx playwright install chromium` — **chromium only** (was `--with-deps` + all browsers; trimmed to cut build time/~320MB since only Chromium is used).
+- `startCommand`: `npm run start` (≡ `start:backend` → `npx tsx server/index.ts`).
 
 ### `.github/workflows/keep-alive.yml`
 - Cron `*/5 * * * *` + manual `workflow_dispatch`. Curls `${RENDER_URL:-https://site-compiler.onrender.com}/health` with 15s timeout + one retry. Keeps Render free instance warm. Mirrors `scripts/keep-alive.js`.
@@ -140,9 +142,10 @@ codify/
 - `client-page.tsx` = the product. 'use client'. Everything on one screen:
   - URL input + format selector (html/react/nextjs, default html) with format cards + "Fastest" badge.
   - Requires sign-in before export (`AuthModal` opens if anonymous).
-  - POST `/api/export` → stores `jobId` in `localStorage('sitecompiler_active_job_id')` and as `?jobId=` query param (history.replaceState).
+  - **Export job creation calls the Render backend DIRECTLY** (`getDirectBackendUrl('/api/export')`) — bypasses Netlify's 10s serverless timeout. Status/cancel/download still proxy through `/api` (they're fast). Local dev falls back to the relative proxy. **One silent retry** after a 2s pause on 502/503/cold-start before surfacing an error.
+  - On success stores `jobId` in `localStorage('sitecompiler_active_job_id')` and as `?jobId=` query param (history.replaceState).
   - On mount, restores in-flight/old job from query/localStorage and refetches status.
-  - Polls `/api/job/:id/status` every 1s; **keeps polling past `completed` while payment is submitted-but-unapproved** so the Download button unlocks live once admin approves.
+  - Polls `/api/job/:id/status` every 1s; **if the Netlify proxy returns non-200, falls back to the direct Render status endpoint** (`getDirectBackendUrl`). **Keeps polling past `completed` while payment is submitted-but-unapproved** so the Download button unlocks live once admin approves.
   - `beforeunload` warning while exporting (background process continues server-side).
   - On completed + signed-in, auto-saves record via `saveUserExport()` (Firestore `user_exports`).
   - **Download flow:** approved OR admin → plain `<a download>` to backend `/api/job/:id/download`. Admin free-pass uses authenticated fetch + blob (an anchor can't carry the Firebase ID token the bypass needs).
@@ -208,7 +211,9 @@ Each is a thin data file feeding `components/export-page-template.tsx` (`ExportP
 Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bearer-ID-token guard, JSON error envelopes.
 
 ### `api/export/route.ts`
-- POST. Body `{ url, format }` (format defaults to `nextjs`). Rate-limited 15/min (`rate-limit.ts`). SSRF-guards the URL, then either proxies to the Render backend or runs the engine in-process depending on runtime (serverless vs. long-lived). Returns `{ jobId }`. The entry point of the whole pipeline.
+- POST. Body `{ url, format }` (format defaults to `nextjs`). Rate-limited 15/min (`rate-limit.ts`). SSRF-guards the URL, then proxies to the Render backend or runs the engine in-process (local dev) — returns `{ jobId }`. **Primary path no longer uses this route in prod** (the browser calls Render directly to dodge the Netlify 10s timeout); it survives as the serverless fallback for local dev / non-browser callers.
+- Uses the **fast lexical `validateUrlForSsrf`** (the DNS-resolving async check moved to the pipeline's `captureSite`, where it runs against Render's compute budget, not Netlify's).
+- Proxy hop: `AbortController` with an 8.5s timeout (inside Netlify's 10s budget); non-JSON responses (e.g. Render cold-start 502/504 HTML) and aborts → `503 { isColdStart: true }` so the client retries instead of showing a dead error.
 
 ### `api/export/payment/route.ts`
 - POST. Rate 10/5min. **Server recomputes the price — the client amount is never trusted**: `max(20, ceil(pageCount/10)*20)`, pageCount clamped to `1..100000`. Writes `export_approvals/{jobId}` doc `{ amount, pageCount, senderAccount, utrNumber, userEmail, status: 'submitted', paymentSubmitted: true, createdAt }`. This doc is the split-brain reconciliation anchor.
@@ -218,6 +223,7 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 
 ### `api/job/[id]/status/route.ts`
 - GET. Proxies to the Render backend for job status, then **overlays Firestore approval state** (`lib/firebase/approval-status.ts`) so a Netlify-side approval shows up even though the backend's in-memory store never saw it. Returns JobState + `paymentSubmitted`/`paymentApproved`.
+- **Never 502s.** The Firestore overlay is wrapped in try/catch (approval lookup is best-effort), non-JSON backend responses → `503 { isColdStart: true }`, and the route falls back to the in-memory local store when `API_BASE_URL` is unset. The client also falls back to the direct Render endpoint if this proxy returns non-200.
 
 ### `api/job/[id]/cancel/route.ts`
 - POST. Id validated `^[a-zA-Z0-9_-]{1,128}$`. Proxies to backend `/api/job/:id/cancel`. Local mode calls `cancelExportJob` (store): marks the job `cancelled`, logs it, purges `exports/{id}/`. The pipeline polls `isJobActive` between phases, so cancellation takes effect at the next safe boundary (never mid-write). Terminal, not reversible.
@@ -287,9 +293,13 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 
 ### `server/index.ts` — Express entry (Render)
 - **Sets `PLAYWRIGHT_BROWSERS_PATH=./pw-browsers` before importing anything Playwright-related** so browsers resolve to the repo-local browser download (duplicated defensively in `lib/crawler/capture.ts`).
-- PORT 3001. Security headers: nosniff, `X-Frame-Options: SAMEORIGIN`, XSS protection, `Referrer-Policy: strict-origin-when-cross-origin`.
-- CORS allowlist: `localhost`/`127.0.0.1` + `CORS_ORIGINS`.
-- Mounts engine endpoints: export start, status, download, screenshot, health (`/health` returns uptime + memory — the one Render's keep-alive and `admin/stats` ping). Also **cancel** (`POST /api/job/:id/cancel`) and **payment-triggered restart** (`POST /api/job/:id/restart`, admin-bypass gated via `ADMIN_BYPASS_SECRET`, restartable only from `completed`/`failed`/`cancelled`).
+- `PORT = Number(process.env.PORT) || 3001` (coerced so Render's string PORT can't cause NaN), binds `HOST` (default `0.0.0.0`) — required for container/cloud deploys.
+- **Health endpoints registered BEFORE CORS** (`/health`, `/api/health`) so Render's deploy scanner always gets a 200 even if a proxy strips Origin. Return uptime + memory.
+- **Process-level crash guards**: `uncaughtException` + `unhandledRejection` handlers log and keep the process alive — a single failed job must not take the port down.
+- Security headers: nosniff, `X-Frame-Options: SAMEORIGIN`, XSS protection, `Referrer-Policy: strict-origin-when-cross-origin` (now applied *after* CORS/json body parsing, still before routes).
+- CORS allowlist: `localhost`/`127.0.0.1` + `FRONTEND_URL` origin + extra `CORS_ORIGINS`. **Origin-less server-to-server requests are always allowed** (Netlify proxy calls, curl/keep-alive). No `credentials` flag.
+- **Export endpoint responds with `{ jobId }` BEFORE `processExportJob` runs** (response flushed first, job re-validates the URL in `captureSite`/`validateUrlForSsrfAsync` before any network fetch). Uses the **fast lexical `validateUrlForSsrf`** on this hop — the async DNS check already ran on the Netlify layer; DNS lookup was the bottleneck that blew Netlify's 10s timeout.
+- Mounts engine endpoints: export start, status, download, screenshot, health, plus **cancel** (`POST /api/job/:id/cancel`) and **payment-triggered restart** (`POST /api/job/:id/restart`, admin-bypass gated via `ADMIN_BYPASS_SECRET`, restartable only from `completed`/`failed`/`cancelled`).
 
 ### `lib/jobs/store.ts` — Job state machine
 - `JobStatus` enum: `pending, crawling, parsing, validating, detecting, generating, validating-output, zipping, completed, failed, cancelled`.
@@ -367,20 +377,20 @@ Playwright crawler:
 - Error path filters `'closing'` (Firebase "Database is closing") silently.
 
 ### `admin.ts`
-- Server SDK (`adminDb`). Loads service-account JSON (gitignored path) → falls back to `FIREBASE_SERVICE_ACCOUNT_KEY` env → warns and uses default credentials. Admin-privilege access, bypasses Firestore rules.
+- Server SDK (`adminDb`). Loads service-account JSON (gitignored path) → falls back to `FIREBASE_SERVICE_ACCOUNT_KEY` env → default credentials with a warning. **Exports `isFirebaseAdminConfigured()`** — when no service account is present, Firestore calls are skipped (fail-open to "no approval data") instead of throwing unauthenticated errors that would 502 the status route.
 
 ### `verify-admin.ts`
 - `verifyAdminRequest(req)`: Bearer token → `verifyIdToken` → Firestore `users/{uid}` must have `role === 'admin'`, else 401 (no/invalid token) / 403 (wrong role). Guard for every admin API route.
 
 ### `approval-status.ts`
-- `getApprovalState(jobId)`: reads `export_approvals/{jobId}`; doc exists → `paymentSubmitted: true`; reads `paymentApproved` flag; returns null on error. Used by the status overlay (§6).
+- `getApprovalState(jobId)`: reads `export_approvals/{jobId}`; doc exists → `paymentSubmitted: true`; reads `paymentApproved` flag. **Bails to `null` early if `!isFirebaseAdminConfigured()`** (no service account → no fake "not approved" state), and swallows lookup errors — the status overlay must never take the status route down.
 
 ---
 
 ## 10. Security, SEO, Content, Utils
 
 ### `lib/security/ssrf.ts`
-- `normalizeHostname` strips trailing dot / brackets. `isBlockedIpv4` blocks: 0/8, 10/8, 127/8, 169.254/16, 172.16/12, 192.168/16, **100.64/10 CGNAT**, 192.0.0.0/24, TEST-NET-1/2/3, 203.0.113. Plus async IPv6/loopback/metadata/`169.254.169.254` and **DNS-rebind** resolution checks. Export endpoint refuses private/metadata targets (server-side SSRF defense for a service whose whole job is fetching arbitrary URLs).
+- Two functions: **`validateUrlForSsrf`** (fast lexical — scheme/host/IPv4/IPv6/metadata checks, no DNS) for the Netlify export route and the Render proxy hop, and **`validateUrlForSsrfAsync`** (adds DNS-resolution + rebind checks) used in the pipeline's `captureSite` where real fetching happens. `normalizeHostname` strips trailing dot / brackets. `isBlockedIpv4` blocks: 0/8, 10/8, 127/8, 169.254/16, 172.16/12, 192.168/16, **100.64/10 CGNAT**, 192.0.0.0/24, TEST-NET-1/2/3, 203.0.113. Plus IPv6/loopback/metadata/`169.254.169.254` and **DNS-rebind** resolution checks. Export endpoint refuses private/metadata targets (server-side SSRF defense for a service whose whole job is fetching arbitrary URLs).
 
 ### `lib/security/rate-limit.ts`
 - In-memory sliding window keyed by IP. Uses the **LAST `x-forwarded-for` entry** (the leftmost is attacker-controlled when behind a proxy). 10-min stale-entry cleanup interval. Guards `/api/export` (15/min) and payment (10/5min), user routes (60/min).
@@ -398,7 +408,9 @@ Playwright crawler:
 - `buildUnifiedFeed()`: single `Feed` object emitted as RSS2, Atom, and JSON1. `siteUrl` fallback `https://sitecompiler.com`. Feeds drive `rss.xml`/`atom.xml`/`feed.json`.
 
 ### `lib/api-config.ts`
-- Resolution: `NEXT_PUBLIC_API_URL` → `BACKEND_URL` → dev `''` → prod `https://site-compiler.onrender.com`. Browser always uses relative `/api/...` (same-origin via Netlify proxy rules). `isServerlessEnvironment()` detects NETLIFY/VERCEL/AWS_LAMBDA.
+- `API_BASE_URL` (server-to-server): `NEXT_PUBLIC_API_URL` → `BACKEND_URL` → dev `''` → prod `https://site-compiler.onrender.com`. Browser always uses relative `/api/...` via `getApiUrl()` (same-origin through Netlify proxy).
+- **`RENDER_BACKEND_URL`** (browser-facing): `NEXT_PUBLIC_RENDER_BACKEND_URL` → dev `''` → prod `https://site-compiler.onrender.com`. **`getDirectBackendUrl(path)`** returns this origin for browser calls that must bypass Netlify's 10s function timeout (export creation + status fallback); falls back to the relative proxy in local dev.
+- `isServerlessEnvironment()` detects NETLIFY/VERCEL/AWS_LAMBDA.
 
 ### `lib/errors.ts`
 - Tiny typed error helper used across routes/engine.
@@ -455,6 +467,8 @@ Playwright crawler:
 10. **No real secrets in repo** — `.env.local` and service-account JSON are gitignored; `NEXT_PUBLIC_FIREBASE_API_KEY` fallback values in `config.ts` are publishable client keys (Netlify omits them from secret scan).
 11. **Two admin UIs exist** — `app/admin/page.tsx` (in this app) and `admin-portal/` (separate static app on `admin.sitecompiler.app`). Both hit the same `/api/admin/*` routes.
 12. **`exports/`, `pw-browsers/`, `out/`, `.next/`, `node_modules/`** are runtime/build artifacts, not source.
+13. **Browser→Render direct calls**: export creation and the status fallback hit `getDirectBackendUrl()` (Render origin) to dodge Netlify's 10s serverless timeout. This is why `server/index.ts` CORS allows the `FRONTEND_URL` origin + origin-less requests, and why the export route returns `{ jobId }` before processing (Render keeps an async 15/min rate limit).
+14. **`/api/job/:id/status` never 502s** — Firestore overlay is best-effort (`isFirebaseAdminConfigured` guard + try/catch), non-JSON backends → `503 isColdStart`, and the client falls back to the direct Render endpoint. If you see 502s from status, it's the *proxy/fetch layer*, not this route.
 
 ---
 

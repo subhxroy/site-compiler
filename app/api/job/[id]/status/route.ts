@@ -11,8 +11,12 @@ export async function GET(
   const { id } = await params;
 
   if (API_BASE_URL) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7500);
+
     try {
-      const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/status`);
+      const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/status`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       const contentType = backendRes.headers.get('content-type') || '';
       
       if (!contentType.includes('application/json')) {
@@ -40,9 +44,11 @@ export async function GET(
       return NextResponse.json(data, { status: backendRes.status });
 
     } catch (proxyError) {
+      clearTimeout(timeoutId);
+      const isAbort = (proxyError as Error)?.name === 'AbortError';
       return NextResponse.json(
-        { error: `Backend service unreachable: ${errorMessage(proxyError)}` },
-        { status: 502 }
+        { error: isAbort ? 'Backend status request timed out.' : `Backend service unreachable: ${errorMessage(proxyError)}` },
+        { status: isAbort ? 503 : 502 }
       );
     }
   }

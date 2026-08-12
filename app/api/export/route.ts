@@ -26,15 +26,20 @@ export async function POST(req: Request) {
 
     const safeUrl = ssrfCheck.url;
 
+    const idempotencyKey = req.headers.get('x-idempotency-key') || undefined;
+
     // Proxy request to Express/Render backend if configured
     if (API_BASE_URL) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8500); // 8.5s timeout (within Netlify 10s budget)
 
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (idempotencyKey) headers['x-idempotency-key'] = idempotencyKey;
+
         const backendRes = await fetch(`${API_BASE_URL}/api/export`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ url: safeUrl, format }),
           signal: controller.signal,
         });

@@ -118,7 +118,12 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const { jobId, url, maxPages = 1000, onProgress } = options;
 
   const normalizedEntryUrl = normalizeUrl(url);
-  const entryUrlParsed = new URL(normalizedEntryUrl);
+  const ssrfCheck = await validateUrlForSsrfAsync(normalizedEntryUrl);
+  if (!ssrfCheck.valid) {
+    throw new Error(`Target URL failed SSRF security validation: ${ssrfCheck.reason || 'Blocked IP/host'}`);
+  }
+
+  const entryUrlParsed = new URL(ssrfCheck.url || normalizedEntryUrl);
   const targetHost = entryUrlParsed.hostname;
 
   const log = (msg: string) => {

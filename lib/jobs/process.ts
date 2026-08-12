@@ -17,8 +17,13 @@ export async function processExportJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
   if (!job) return;
 
+  let currentPhase = 'crawling';
+  console.log(`[job:${jobId}] CREATED`);
+
   try {
     // ── Phase 1: Crawl ──────────────────────────────────────────────────────
+    currentPhase = 'crawling';
+    console.log(`[job:${jobId}] CRAWL_START`);
     updateJob(
       jobId,
       { status: 'crawling', progressMessage: 'Launching browser and crawling site...' },
@@ -32,6 +37,7 @@ export async function processExportJob(jobId: string): Promise<void> {
     });
 
     throwIfCancelled(jobId);
+    console.log(`[job:${jobId}] CRAWL_END`);
 
     updateJob(jobId, {
       screenshots: {
@@ -42,6 +48,8 @@ export async function processExportJob(jobId: string): Promise<void> {
     });
 
     // ── Phase 2: Parse HTML + CSS ───────────────────────────────────────────
+    currentPhase = 'parsing';
+    console.log(`[job:${jobId}] PARSE_START`);
     updateJob(
       jobId,
       { status: 'parsing', progressMessage: 'Processing DOM and consolidating styles...' },
@@ -55,8 +63,11 @@ export async function processExportJob(jobId: string): Promise<void> {
     });
 
     throwIfCancelled(jobId);
+    console.log(`[job:${jobId}] PARSE_END`);
 
     // ── Phase 2b: Validate HTML output ──────────────────────────────────────
+    currentPhase = 'validating';
+    console.log(`[job:${jobId}] VALIDATE_START`);
     updateJob(
       jobId,
       { status: 'validating', progressMessage: 'Validating HTML output...' },
@@ -67,8 +78,11 @@ export async function processExportJob(jobId: string): Promise<void> {
     if (!htmlCheck.ok) {
       throw new Error(`HTML output validation failed: ${htmlCheck.errors.join('; ')}`);
     }
+    console.log(`[job:${jobId}] VALIDATE_END`);
 
     // ── Phase 3: Section Detection ──────────────────────────────────────────
+    currentPhase = 'detecting';
+    console.log(`[job:${jobId}] DETECT_START`);
     updateJob(
       jobId,
       { status: 'detecting', progressMessage: 'Analysing layout sections and components...' },
@@ -82,8 +96,11 @@ export async function processExportJob(jobId: string): Promise<void> {
     );
 
     throwIfCancelled(jobId);
+    console.log(`[job:${jobId}] DETECT_END`);
 
     // ── Phase 4: Code Generation (Next.js / React only) ────────────────────
+    currentPhase = 'generating';
+    console.log(`[job:${jobId}] GENERATE_START`);
     updateJob(
       jobId,
       { status: 'generating', progressMessage: 'Generating code output...' },
@@ -99,9 +116,12 @@ export async function processExportJob(jobId: string): Promise<void> {
     }
 
     throwIfCancelled(jobId);
+    console.log(`[job:${jobId}] GENERATE_END`);
 
     // ── Phase 4b: Validate generated output (Next.js / React only) ─────────
     if (job.format === 'nextjs' || job.format === 'react') {
+      currentPhase = 'output-validation';
+      console.log(`[job:${jobId}] OUTPUT_VALIDATE_START`);
       updateJob(
         jobId,
         { status: 'validating-output', progressMessage: 'Validating generated project...' },
@@ -113,9 +133,12 @@ export async function processExportJob(jobId: string): Promise<void> {
       if (!genCheck.ok) {
         throw new Error(`Generated project validation failed: ${genCheck.errors.join('; ')}`);
       }
+      console.log(`[job:${jobId}] OUTPUT_VALIDATE_END`);
     }
 
     // ── Phase 5: ZIP with README ────────────────────────────────────────────
+    currentPhase = 'zipping';
+    console.log(`[job:${jobId}] ZIP_START`);
     updateJob(
       jobId,
       { status: 'zipping', progressMessage: 'Packaging files and writing README...' },
@@ -134,16 +157,11 @@ export async function processExportJob(jobId: string): Promise<void> {
     });
 
     // ── Phase 5b: Validate the ZIP before claiming success ──────────────────
-    updateJob(
-      jobId,
-      { status: 'validating-output', progressMessage: 'Validating ZIP archive...' },
-      'Phase 5b: Validating ZIP archive'
-    );
-
     const zipCheck = validateZip(zipPath);
     if (!zipCheck.ok) {
       throw new Error(`ZIP validation failed: ${zipCheck.errors.join('; ')}`);
     }
+    console.log(`[job:${jobId}] ZIP_END`);
 
     // Measure the resulting archive
     const { statSync } = await import('fs');
@@ -167,22 +185,23 @@ export async function processExportJob(jobId: string): Promise<void> {
       },
       `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
     );
+    console.log(`[job:${jobId}] COMPLETED`);
   } catch (err: unknown) {
     const jobAfter = getJob(jobId);
     if (jobAfter && jobAfter.status === 'cancelled') {
-      console.log(`[Job ${jobId}] Skipping failure handling — job was cancelled.`);
+      console.log(`[job:${jobId}] Skipping failure handling — job was cancelled.`);
       return;
     }
-    console.error(`[Job ${jobId}] Failed:`, err);
     const errMsg = (err as Error).message || String(err);
+    console.error(`[job:${jobId}] FAILED phase=${currentPhase} error=${errMsg}`);
     updateJob(
       jobId,
       {
         status: 'failed',
         error: errMsg,
-        progressMessage: `Export failed: ${errMsg}`,
+        progressMessage: `Export failed during ${currentPhase}: ${errMsg}`,
       },
-      `ERROR: ${errMsg}`
+      `ERROR phase=${currentPhase}: ${errMsg}`
     );
   }
 }

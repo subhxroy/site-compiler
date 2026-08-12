@@ -40,6 +40,8 @@
     "exports",
     "exports/**/*",
     "server",
-    "server/**/*"
+    "server/**/*",
+    "scripts",
+    "scripts/**/*"
   ]
 }

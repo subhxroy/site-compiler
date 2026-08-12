@@ -7,7 +7,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
-import { createJob, getJob, toPublicJob, cancelExportJob, updateJob } from '../lib/jobs/store';
+import { createJob, getJob, toPublicJob, cancelExportJob, updateJob, getJobByIdempotencyKey } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrf } from '../lib/security/ssrf';
 
@@ -36,7 +36,7 @@ app.get('/api/health', healthHandler);
 // Custom origins can be added via the CORS_ORIGINS env var (comma-separated list).
 function isAllowedOrigin(origin: string | undefined, callback: (err: Error | null, allow: boolean) => void): void {
   if (!origin) {
-    // Server-to-server request (no Origin header) — always allow (Netlify proxy calls)
+    // Server-to-server request (no Origin header) — always allow
     callback(null, true);
     return;
   }
@@ -47,8 +47,13 @@ function isAllowedOrigin(origin: string | undefined, callback: (err: Error | nul
       callback(null, true);
       return;
     }
+    // Allow Netlify production domains
+    if (u.hostname.endsWith('.netlify.app')) {
+      callback(null, true);
+      return;
+    }
     // Allow the configured frontend URL (set in Render env as FRONTEND_URL)
-    const frontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://site-compiler.netlify.app';
     if (frontendUrl) {
       try {
         if (new URL(frontendUrl).origin === u.origin) {
@@ -72,7 +77,7 @@ app.use(
   cors({
     origin: isAllowedOrigin,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-idempotency-key', 'x-sitecompiler-admin-bypass'],
   })
 );
 
@@ -106,6 +111,7 @@ app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) =
     const { url } = req.body || {};
     const allowedFormats = ['html', 'react', 'nextjs'];
     const format = allowedFormats.includes(req.body?.format) ? req.body.format : 'nextjs';
+    const idempotencyKey = (req.get('x-idempotency-key') || req.body?.idempotencyKey || '').trim();
 
     const ssrfCheck = validateUrlForSsrf(url);
     if (!ssrfCheck.valid || !ssrfCheck.url) {
@@ -114,16 +120,18 @@ app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) =
     }
 
     const safeUrl = ssrfCheck.url;
-    const job = createJob(safeUrl, format);
+    const isNewJob = !idempotencyKey || !getJobByIdempotencyKey(idempotencyKey);
+    const job = createJob(safeUrl, format, idempotencyKey || undefined);
 
-    // Respond immediately with the jobId — the job pipeline will re-validate
-    // the URL before any network fetch occurs (in captureSite/validateUrlForSsrfAsync).
+    // Respond immediately with the jobId
     res.status(200).json({ jobId: job.id, status: job.status });
 
-    // Trigger background export process after response is flushed
-    processExportJob(job.id).catch((err) => {
-      console.error(`[Render Backend] Background job ${job.id} failed:`, err);
-    });
+    // Trigger background export process only if this is a newly created job
+    if (isNewJob && job.status === 'pending') {
+      processExportJob(job.id).catch((err) => {
+        console.error(`[Render Backend] Background job ${job.id} failed:`, err);
+      });
+    }
   } catch (error: unknown) {
     res.status(500).json({ error: (error as Error).message || 'Internal Server Error' });
   }

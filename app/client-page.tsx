@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { getApiUrl, getDirectBackendUrl } from '@/lib/api-config';
+import { getDirectBackendUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
 import { PaywallModal } from '@/components/paywall-modal';
@@ -216,10 +216,9 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
       setLoading(true);
       const fetchStatus = async () => {
         try {
-          let res = await fetch(getApiUrl(`/api/job/${savedJobId}/status`));
-          if (!res.ok) {
-            res = await fetch(getDirectBackendUrl(`/api/job/${savedJobId}/status`));
-          }
+          const directUrl = getDirectBackendUrl(`/api/job/${savedJobId}/status`);
+          console.log(`[RESTORE DEBUG] fetching status from: ${directUrl}`);
+          const res = await fetch(directUrl);
           if (res.ok) {
             const data: JobState = await res.json();
             if (data && data.id) {
@@ -244,32 +243,119 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     }
   }, []);
 
-  // Poll status while job is running
+  // Poll status while job is running with safety watchdog & failure handling
   useEffect(() => {
     if (!jobId) return;
+
+    let consecutiveErrors = 0;
+    let pollAttempt = 0;
+    const startTime = Date.now();
+    const MAX_JOB_DURATION_MS = 5 * 60 * 1000; // 5 minute max client-side timeout
+
+    console.log(`[POLL DEBUG] Starting status polling for jobId: ${jobId}`);
+
     const iv = setInterval(async () => {
+      pollAttempt++;
+      // 1. Client-side timeout watchdog
+      if (Date.now() - startTime > MAX_JOB_DURATION_MS) {
+        console.warn(`[POLL DEBUG] Job ${jobId} hit 5-minute client watchdog timeout`);
+        setJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: 'failed',
+                error: 'Export process timed out. The backend engine or target site took too long to respond.',
+                progressMessage: 'Export process timed out after 5 minutes.',
+              }
+            : null
+        );
+        setLoading(false);
+        localStorage.removeItem('sitecompiler_active_job_id');
+        clearInterval(iv);
+        return;
+      }
+
       try {
-        let res = await fetch(getApiUrl(`/api/job/${jobId}/status`));
-        if (!res.ok) {
-          res = await fetch(getDirectBackendUrl(`/api/job/${jobId}/status`));
-        }
+        const pollUrl = getDirectBackendUrl(`/api/job/${jobId}/status`);
+        console.log(`[POLL DEBUG] attempt #${pollAttempt} -> ${pollUrl}`);
+        const res = await fetch(pollUrl);
+
         if (res.ok) {
-          const data: JobState = await res.json();
-          setJob(data);
-          if (TERMINAL_STATUSES.includes(data.status)) {
+          consecutiveErrors = 0;
+          let data: JobState | null = null;
+          try {
+            data = await res.json();
+          } catch {
+            data = null;
+          }
+
+          if (data && data.id) {
+            console.log(`[POLL DEBUG] received status: ${data.status} | message: ${data.progressMessage}`);
+            setJob(data);
+            if (TERMINAL_STATUSES.includes(data.status)) {
+              console.log(`[POLL DEBUG] Job ${data.id} reached terminal state: ${data.status}`);
+              setLoading(false);
+              localStorage.removeItem('sitecompiler_active_job_id');
+              const awaitingApproval =
+                data.status === 'completed' && data.paymentSubmitted && !data.paymentApproved;
+              if (!awaitingApproval) clearInterval(iv);
+            }
+          }
+        } else if (res.status === 404) {
+          console.error(`[POLL DEBUG] Job ${jobId} returned 404 (job missing on backend)`);
+          setJob((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'failed',
+                  error: 'Export job not found or backend was restarted.',
+                  progressMessage: 'Export job expired.',
+                }
+              : null
+          );
+          setLoading(false);
+          localStorage.removeItem('sitecompiler_active_job_id');
+          clearInterval(iv);
+        } else {
+          consecutiveErrors++;
+          console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors})`);
+          if (consecutiveErrors >= 15) {
+            setJob((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: 'failed',
+                    error: 'Backend service unavailable. Please check backend connection.',
+                    progressMessage: 'Backend unreachable.',
+                  }
+                : null
+            );
             setLoading(false);
-            localStorage.removeItem('sitecompiler_active_job_id');
-            // Keep polling while a submitted payment is still awaiting admin
-            // approval so the Download button unlocks as soon as it's granted.
-            const awaitingApproval = data.status === 'completed' && data.paymentSubmitted && !data.paymentApproved;
-            if (!awaitingApproval) clearInterval(iv);
+            clearInterval(iv);
           }
         }
-      } catch {}
+      } catch (pollErr) {
+        consecutiveErrors++;
+        console.error(`[POLL DEBUG] Network error polling status:`, pollErr);
+        if (consecutiveErrors >= 15) {
+          setJob((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'failed',
+                  error: 'Network connection lost while polling job status.',
+                  progressMessage: 'Network error.',
+                }
+              : null
+          );
+          setLoading(false);
+          clearInterval(iv);
+        }
+      }
     }, 1000);
+
     return () => clearInterval(iv);
   }, [jobId]);
-
 
   // Save to Firebase Firestore when completed and user is logged in
   useEffect(() => {
@@ -323,60 +409,79 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     setJobId(null);
     setTab('preview');
     setSavedToFirebase(false);
+
+    // Generate unique idempotency key per export click
+    const idempotencyKey = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const requestTargetUrl = getDirectBackendUrl('/api/export');
+
+    console.log('[EXPORT DEBUG] starting export submission');
+    console.log(`[EXPORT DEBUG] backend URL: ${requestTargetUrl}`);
+    console.log(`[EXPORT DEBUG] target site URL: ${url.trim()} | format: ${format}`);
+    console.log(`[EXPORT DEBUG] idempotency key: ${idempotencyKey}`);
+
     try {
       let attempts = 0;
       let success = false;
+      const MAX_ATTEMPTS = 3;
 
-      while (attempts < 2 && !success) {
+      while (attempts < MAX_ATTEMPTS && !success) {
         attempts++;
-        // Call Render directly — bypasses Netlify's 10s serverless timeout.
-        // Status, cancel, and download calls still go through /api proxy (they're fast).
-        const res = await fetch(getDirectBackendUrl('/api/export'), {
+        console.log(`[EXPORT DEBUG] sending POST attempt ${attempts}/${MAX_ATTEMPTS}...`);
+        const res = await fetch(requestTargetUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-idempotency-key': idempotencyKey,
+          },
           body: JSON.stringify({ url: url.trim(), format }),
         });
 
-        let data: any = null;
+        console.log(`[EXPORT DEBUG] response received | status: ${res.status} | ok: ${res.ok}`);
+
+        let data: Record<string, unknown> | null = null;
         try {
-          data = await res.json();
-        } catch {
+          data = (await res.json()) as Record<string, unknown>;
+        } catch (jsonErr) {
+          console.warn('[EXPORT DEBUG] failed to parse response JSON:', jsonErr);
           data = null;
         }
 
-        if (res.ok && data?.jobId) {
+        console.log('[EXPORT DEBUG] response body:', data);
+        const jobIdResult = typeof data?.jobId === 'string' ? data.jobId : null;
+
+        if (res.ok && jobIdResult) {
+          console.log(`[EXPORT DEBUG] jobId received: ${jobIdResult}`);
           success = true;
-          setJobId(data.jobId);
-          localStorage.setItem('sitecompiler_active_job_id', data.jobId);
+          setJobId(jobIdResult);
+          localStorage.setItem('sitecompiler_active_job_id', jobIdResult);
           if (typeof window !== 'undefined') {
             const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('jobId', data.jobId);
+            newUrl.searchParams.set('jobId', jobIdResult);
             window.history.replaceState({}, '', newUrl.toString());
           }
           break;
-        } else if ((res.status === 502 || res.status === 503 || data?.isColdStart) && attempts < 2) {
-          // Silently retry once after a short pause — backend may be under load
-          console.log('[SiteCompiler] Retrying export request...');
-          await new Promise((r) => setTimeout(r, 2000));
+        } else if ((res.status === 502 || res.status === 503 || data?.isColdStart) && attempts < MAX_ATTEMPTS) {
+          console.log(`[EXPORT DEBUG] 502/503 retry attempt ${attempts}/${MAX_ATTEMPTS}...`);
+          await new Promise((r) => setTimeout(r, attempts * 2000));
           continue;
         } else {
           const errorMsg =
-            data?.error ||
-            data?.message ||
+            (typeof data?.error === 'string' && data.error) ||
+            (typeof data?.message === 'string' && data.message) ||
             (res.status === 503 || res.status === 502
               ? 'Export server is unavailable. Please try again in a few seconds.'
               : 'Failed to start export. Please try again.');
+          console.error(`[EXPORT DEBUG] export request failed: ${errorMsg}`);
           alert(errorMsg);
           setLoading(false);
           return;
         }
       }
     } catch (err: unknown) {
+      console.error('[EXPORT DEBUG] network error:', err);
       alert(`Network error: ${(err as Error)?.message || 'Please check your connection and try again.'}`);
       setLoading(false);
     }
-
-
   };
 
   const handleReset = () => {
@@ -396,7 +501,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     if (!jobId) return;
     if (!window.confirm('Cancel this export? Any files generated so far will be deleted.')) return;
     try {
-      await fetch(getApiUrl(`/api/job/${jobId}/cancel`), { method: 'POST' });
+      await fetch(getDirectBackendUrl(`/api/job/${jobId}/cancel`), { method: 'POST' });
       setLoading(false);
     } catch {
       alert('Could not reach the cancel service. The export may have already finished.');
@@ -583,7 +688,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     )}
                     {job.paymentApproved || isAdmin ? (
                       <a
-                        href={getApiUrl(job.downloadUrl)}
+                        href={getDirectBackendUrl(job.downloadUrl)}
                         download
                         onClick={async (e) => {
                           // Admin free-pass: plain anchor navigation can't carry
@@ -594,7 +699,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                           e.preventDefault();
                           try {
                             const token = await getIdToken();
-                            const res = await fetch(getApiUrl(job.downloadUrl!), {
+                            const res = await fetch(getDirectBackendUrl(job.downloadUrl!), {
                               headers: token ? { Authorization: `Bearer ${token}` } : {},
                             });
                             if (!res.ok) {
@@ -712,7 +817,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     <div className="transition-all duration-300 ease-in-out">
                       <img
                         key={`${viewport}-${job.id}`}
-                        src={getApiUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
+                        src={getDirectBackendUrl(`/api/job/${job.id}/screenshot?type=${viewport}`)}
                         alt={`${viewport} screenshot`}
                         className={`h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto transition-all duration-300 ${
                           viewport === 'mobile'
@@ -723,7 +828,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                         }`}
                         onError={(e) => {
                           const target = e.currentTarget;
-                          const desktopUrl = getApiUrl(`/api/job/${job.id}/screenshot?type=desktop`);
+                          const desktopUrl = getDirectBackendUrl(`/api/job/${job.id}/screenshot?type=desktop`);
                           if (target.src !== desktopUrl) {
                             target.src = desktopUrl;
                           }

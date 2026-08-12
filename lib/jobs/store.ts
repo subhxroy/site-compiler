@@ -46,14 +46,21 @@ export interface JobState {
 // In-process job store
 const jobStore = new Map<string, JobState>();
 
-// Export package retention. Previously 10 minutes — too short for the
-// pay → admin-approve → download flow (approval routinely happens after the
-// purge, deleting the ZIP and causing "file didn't exist" on download).
-// Default 24 hours; override with EXPORT_RETENTION_MS.
+// Idempotency key store: maps request idempotency key -> { jobId, createdAt }
+const idempotencyStore = new Map<string, { jobId: string; createdAt: number }>();
+
+// Export package retention. Default 24 hours.
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const RETENTION_MS = (() => {
   const fromEnv = Number(process.env.EXPORT_RETENTION_MS);
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_RETENTION_MS;
+})();
+
+// Max allowed job duration before watchdog marks it failed. Default 5 minutes (300,000 ms).
+const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
+export const EXPORT_JOB_TIMEOUT_MS = (() => {
+  const fromEnv = Number(process.env.EXPORT_JOB_TIMEOUT_MS);
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_JOB_TIMEOUT_MS;
 })();
 
 const ACTIVE_STATUSES = new Set<JobStatus>([
@@ -91,13 +98,45 @@ export function cleanupOldExportJobs(maxAgeMs: number = RETENTION_MS): void {
         }
       } catch {}
     }
+
+    // Clean up stale idempotency keys (> 1 hour old)
+    for (const [key, val] of idempotencyStore.entries()) {
+      if (now - val.createdAt > 60 * 60 * 1000) {
+        idempotencyStore.delete(key);
+      }
+    }
   } catch (err) {
     console.error('[Exports Garbage Collector] Cleanup error:', err);
   }
 }
 
-export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): JobState {
+export function getJobByIdempotencyKey(key: string): JobState | undefined {
+  if (!key) return undefined;
+  const entry = idempotencyStore.get(key);
+  if (!entry) return undefined;
+  const job = jobStore.get(entry.jobId);
+  if (job && ACTIVE_STATUSES.has(job.status)) {
+    return job;
+  }
+  return undefined;
+}
+
+export function registerJobIdempotencyKey(key: string, jobId: string): void {
+  if (!key || !jobId) return;
+  idempotencyStore.set(key, { jobId, createdAt: Date.now() });
+}
+
+export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idempotencyKey?: string): JobState {
   cleanupOldExportJobs();
+
+  if (idempotencyKey) {
+    const existingJob = getJobByIdempotencyKey(idempotencyKey);
+    if (existingJob) {
+      console.log(`[Job Store] Reusing active job ${existingJob.id} for idempotency key ${idempotencyKey}`);
+      return existingJob;
+    }
+  }
+
   const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
   const job: JobState = {
@@ -111,9 +150,26 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs'): Job
   };
   jobStore.set(jobId, job);
 
+  if (idempotencyKey) {
+    registerJobIdempotencyKey(idempotencyKey, jobId);
+  }
+
+  // Watchdog timer: automatically fail job if it remains active beyond EXPORT_JOB_TIMEOUT_MS
+  setTimeout(() => {
+    try {
+      const current = jobStore.get(jobId);
+      if (current && ACTIVE_STATUSES.has(current.status)) {
+        const timeNow = new Date().toLocaleTimeString('en-US', { hour12: true });
+        console.error(`[Job Watchdog] Job ${jobId} timed out after ${EXPORT_JOB_TIMEOUT_MS}ms`);
+        current.status = 'failed';
+        current.error = 'Export timed out. The backend engine or target site took too long to process.';
+        current.progressMessage = 'Export timed out. The backend may have been unavailable or target site took too long.';
+        current.logs.push(`[${timeNow}] ERROR: Export timed out after ${Math.round(EXPORT_JOB_TIMEOUT_MS / 1000)} seconds.`);
+      }
+    } catch {}
+  }, EXPORT_JOB_TIMEOUT_MS);
+
   // Schedule automatic purging of server files after the retention window.
-  // Skip if the job is still running so a long crawl's export dir is never
-  // deleted mid-write; the mtime-based GC will pick it up once the job finishes.
   setTimeout(() => {
     try {
       const job = jobStore.get(jobId);
