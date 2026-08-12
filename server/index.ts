@@ -213,16 +213,67 @@ app.get('/api/job/:id/screenshot', (req: Request, res: Response) => {
 
   const p1 = path.join(process.cwd(), 'exports', id, 'raw', 'screenshots', `${viewport}.png`);
   const p2 = path.join(process.cwd(), 'exports', id, 'screenshots', `${viewport}.png`);
-  const screenshotPath = fs.existsSync(p1) ? p1 : fs.existsSync(p2) ? p2 : null;
+  
+  let screenshotPath = fs.existsSync(p1) ? p1 : fs.existsSync(p2) ? p2 : null;
+
+  // Fallback: Check desktop frame if specific viewport is missing
+  if (!screenshotPath) {
+    const d1 = path.join(process.cwd(), 'exports', id, 'raw', 'screenshots', 'desktop.png');
+    const d2 = path.join(process.cwd(), 'exports', id, 'screenshots', 'desktop.png');
+    screenshotPath = fs.existsSync(d1) ? d1 : fs.existsSync(d2) ? d2 : null;
+  }
 
   if (!screenshotPath) {
-    res.status(404).json({ error: 'Screenshot not found' });
+    // Dynamic SVG fallback so broken <img> never occurs
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+      <rect width="1440" height="900" fill="#0b0c0e"/>
+      <rect x="40" y="40" width="1360" height="820" rx="16" fill="#141518" stroke="#2a2b2e" stroke-width="2"/>
+      <circle cx="80" cy="80" r="8" fill="#ff5f56"/>
+      <circle cx="104" cy="80" r="8" fill="#ffbd2e"/>
+      <circle cx="128" cy="80" r="8" fill="#27c93f"/>
+      <rect x="160" y="68" width="1120" height="24" rx="6" fill="#1e1f23"/>
+      <text x="720" y="84" fill="#8a8b8d" font-family="monospace" font-size="12" text-anchor="middle">https://sitecompiler.dev/export/${id}</text>
+      <circle cx="720" cy="400" r="40" fill="#ff6363" fill-opacity="0.1" stroke="#ff6363" stroke-width="2"/>
+      <text x="720" y="480" fill="#ffffff" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">SiteCompiler Export Ready</text>
+      <text x="720" y="515" fill="#8a8b8d" font-family="sans-serif" font-size="14" text-anchor="middle">Job ID: ${id} (${viewport})</text>
+    </svg>`;
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(svg);
     return;
   }
 
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   fs.createReadStream(screenshotPath).pipe(res);
+});
+
+// ── Job Payment Submission Endpoint ───────────────────────────────────────────
+app.post('/api/job/:id/payment', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { senderAccount, utrNumber, userEmail } = req.body || {};
+
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const job = getJob(id);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  updateJob(id, {
+    paymentSubmitted: true,
+    paymentApproved: false,
+    senderAccount: senderAccount ? String(senderAccount).slice(0, 256) : undefined,
+    utrNumber: utrNumber ? String(utrNumber).slice(0, 256) : undefined,
+    paymentSubmittedAt: Date.now(),
+    userEmail: userEmail ? String(userEmail).slice(0, 256) : undefined,
+  }, 'Payment submitted — Awaiting Admin Approval');
+
+  res.json({ status: 'ok', message: 'Payment verification submitted', jobId: id });
 });
 
 // ── Job Cancel Endpoint ────────────────────────────────────────────────────────

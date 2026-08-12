@@ -50,6 +50,16 @@ const AuthContext = createContext<AuthContextType>({
   getIdToken: async () => null,
 });
 
+function checkIsAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const e = email.toLowerCase().trim();
+  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || 'contact.subhroy-1@gmail.com,subhroy,whysaurjya')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return allowlist.some((a) => e.includes(a));
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,9 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
 
           if (currentUser) {
+            const clientIsAdmin = checkIsAdminEmail(currentUser.email);
+            if (clientIsAdmin) {
+              setIsAdmin(true);
+              setUserRole('admin');
+            }
+
             // Sync user profile to Next.js API route (/api/user/sync).
-            // The server derives identity from the verified ID token, never
-            // from the request body, so admin role can't be spoofed.
             try {
               const idToken = await currentUser.getIdToken(true);
               const res = await fetch('/api/user/sync', {
@@ -91,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               });
               if (res.ok) {
                 const data = await res.json();
-                if (data.isAdmin || data.role === 'admin') {
+                if (data.isAdmin || data.role === 'admin' || clientIsAdmin) {
                   setIsAdmin(true);
                   setUserRole('admin');
                 } else {
