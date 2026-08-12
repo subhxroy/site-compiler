@@ -341,25 +341,28 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             window.history.replaceState({}, '', newUrl.toString());
           }
           break;
+        } else if ((res.status === 502 || res.status === 503 || data?.isColdStart) && attempts < 2) {
+          // Silently retry once after a short pause — backend may be under load
+          console.log('[SiteCompiler] Retrying export request...');
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
         } else {
-          // If Render backend is spinning up from cold start, trigger a health ping & retry once
-          if ((res.status === 502 || res.status === 503 || data?.isColdStart) && attempts < 2) {
-            console.log('[SiteCompiler] Backend warming up from cold start, retrying in 3 seconds...');
-            fetch(getApiUrl('/health')).catch(() => {});
-            await new Promise((r) => setTimeout(r, 3000));
-            continue;
-          }
-
-          const errorMsg = data?.error || data?.message || (res.status === 503 || res.status === 502 ? 'Render backend server is spinning up from cold start. Please click Export again in 5 seconds.' : 'Failed to start export. Please try again.');
+          const errorMsg =
+            data?.error ||
+            data?.message ||
+            (res.status === 503 || res.status === 502
+              ? 'Export server is unavailable. Please try again in a few seconds.'
+              : 'Failed to start export. Please try again.');
           alert(errorMsg);
           setLoading(false);
           return;
         }
       }
     } catch (err: unknown) {
-      alert(`Network error: ${(err as Error)?.message || 'Is the server running?'}`);
+      alert(`Network error: ${(err as Error)?.message || 'Please check your connection and try again.'}`);
       setLoading(false);
     }
+
 
   };
 

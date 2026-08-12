@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { createJob, getJob, toPublicJob, cancelExportJob, updateJob } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
-import { validateUrlForSsrfAsync } from '../lib/security/ssrf';
+import { validateUrlForSsrf } from '../lib/security/ssrf';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -78,13 +78,17 @@ const exportRateLimiter = rateLimit({
 });
 
 // ── Export Endpoint ────────────────────────────────────────────────────────────
+// The Netlify serverless layer (app/api/export/route.ts) already performed the
+// DNS-resolving async SSRF check before proxying here. Use the fast lexical check
+// on this hop so the endpoint responds in milliseconds (DNS lookup was the
+// bottleneck causing Netlify's 10s function timeout to fire on warm instances).
 app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) => {
   try {
     const { url } = req.body || {};
     const allowedFormats = ['html', 'react', 'nextjs'];
     const format = allowedFormats.includes(req.body?.format) ? req.body.format : 'nextjs';
 
-    const ssrfCheck = await validateUrlForSsrfAsync(url);
+    const ssrfCheck = validateUrlForSsrf(url);
     if (!ssrfCheck.valid || !ssrfCheck.url) {
       res.status(400).json({ error: ssrfCheck.reason || 'Invalid or forbidden target URL' });
       return;
@@ -93,12 +97,14 @@ app.post('/api/export', exportRateLimiter, async (req: Request, res: Response) =
     const safeUrl = ssrfCheck.url;
     const job = createJob(safeUrl, format);
 
-    // Trigger background export process without blocking HTTP response
+    // Respond immediately with the jobId — the job pipeline will re-validate
+    // the URL before any network fetch occurs (in captureSite/validateUrlForSsrfAsync).
+    res.status(200).json({ jobId: job.id, status: job.status });
+
+    // Trigger background export process after response is flushed
     processExportJob(job.id).catch((err) => {
       console.error(`[Render Backend] Background job ${job.id} failed:`, err);
     });
-
-    res.status(200).json({ jobId: job.id, status: job.status });
   } catch (error: unknown) {
     res.status(500).json({ error: (error as Error).message || 'Internal Server Error' });
   }
