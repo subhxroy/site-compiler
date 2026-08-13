@@ -47,6 +47,12 @@ export function parseAndConsolidateCss(
   const rulesMap = new Map<string, string[]>(); // declarationString -> list of selectors sharing exact same CSS
 
   root.walkRules((rule) => {
+    // Strip platform watermark/badge CSS rules
+    if (/framer-badge|webflow-badge|wix-badge|wixAdWrapper|wpadminbar/i.test(rule.selector)) {
+      rule.remove();
+      return;
+    }
+
     // Collect declarations
     const decls: string[] = [];
     rule.walkDecls((decl) => {

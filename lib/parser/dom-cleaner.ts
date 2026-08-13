@@ -17,39 +17,94 @@ const WATERMARK_RE =
 const BARE_POWERED_RE = /^(proudly powered by|powered by)\s+(wordpress|framer|webflow|wix)\b.*$/i;
 
 export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
-  // Known badge/fixed-watermark selectors
-  // `__framer-badge` is Framer's "Made in Framer" pill; `.w-webflow-badge` is
-  // Webflow's badge; `.wix-badge` is Wix's free-site badge.
-  $('.__framer-badge, [class*="__framer-badge"], .w-webflow-badge, [class*="webflow-badge"], .wix-badge, .wixAdWrapper, #wpadminbar')
-    .remove();
+  // 1. Comprehensive selector list for platform badges, overlays, and ads
+  const PLATFORM_WATERMARK_SELECTORS = [
+    // Framer badges & watermarks
+    '.__framer-badge',
+    '[class*="__framer-badge"]',
+    '[class*="framer-badge"]',
+    '[id*="framer-badge"]',
+    '#framer-badge-container',
+    '[data-framer-name*="Badge" i]',
+    '[data-framer-component-type*="Badge" i]',
+    'a[href*="framer.com"]',
+    'a[href*="framer.link"]',
+    'a[href*="framer.site"]',
+    'a[href*="framer.website"]',
 
-  const candidates = $('a, p, span, div, footer, small, li, h1, h2, h3');
-  candidates.each((_, el) => {
-    const text = ($(el).text() || '').replace(/\s+/g, ' ').trim();
-    if (!text || text.length > 80) return;
+    // Webflow badges & ads
+    '.w-webflow-badge',
+    '[class*="webflow-badge"]',
+    'a[href*="webflow.com"][target="_blank"]',
+    'img[src*="webflow-badge"]',
+    '[data-wf-site] + div a[href*="webflow.com"]',
 
-    const isWatermark =
-      WATERMARK_RE.test(text) ||
-      BARE_POWERED_RE.test(text) ||
-      /^wix\.com\s*$/i.test(text) ||
-      (text.length < 40 && /wix\.com/i.test(text) && /(powered|built|created|made)/i.test(text));
+    // Wix badges & ads
+    '.wix-badge',
+    '.wixAdWrapper',
+    '#WIX_ADS',
+    '[id*="WIX_ADS"]',
+    '[class*="wix-badge"]',
+    'iframe[src*="wix.com"]',
+    '#wix-ads-container',
 
-    if (!isWatermark) return;
+    // WordPress / Squarespace / Shopify / Carrd / Weebly
+    '#wpadminbar',
+    'a[href*="carrd.co"]',
+    'a[href*="squarespace.com"]',
+    'a[href*="wordpress.org"]',
+    'a[href*="shopify.com/free-trial"]',
+  ].join(', ');
 
-    // Only remove leaf-ish elements / links / footers — never big containers
-    const childCount = $(el).children().length;
-    const isLink = el.tagName === 'a';
-    const isFooter = el.tagName === 'footer';
-    if (isLink || isFooter || childCount === 0 || text.length < 50) {
+  $(PLATFORM_WATERMARK_SELECTORS).remove();
+
+  // 2. Fixed/absolute floating badges (bottom right corner pills common in Framer & Webflow)
+  $('[style*="fixed"], [style*="absolute"]').each((_, el) => {
+    const htmlSnippet = ($(el).html() || '').toLowerCase();
+    const textSnippet = ($(el).text() || '').trim().toLowerCase();
+    const linksToPlatform = /framer\.com|framer\.link|framer\.site|webflow\.com|wix\.com|squarespace\.com|carrd\.co/i.test(htmlSnippet);
+    const mentionsWatermark = /(made|built|designed|crafted|powered)\s+(in|with|by|on)\s+(framer|webflow|wix|wordpress|squarespace)/i.test(textSnippet) || /made in framer|built with framer|get started with framer/i.test(textSnippet);
+
+    if (linksToPlatform || mentionsWatermark) {
       $(el).remove();
     }
   });
 
-  // aria-label / title based watermarks (e.g. Framer "Made in Framer" links)
-  $('[aria-label], [title]').each((_, el) => {
-    const combined = `${$(el).attr('aria-label') || ''} ${$(el).attr('title') || ''}`.replace(/\s+/g, ' ').trim();
-    if (!combined || combined.length > 140) return;
-    if (WATERMARK_RE.test(combined) || BARE_POWERED_RE.test(combined) || /^create a free website with framer/i.test(combined)) {
+  // 3. Text, aria-label, title, and link regex matching across leaf & wrapper elements
+  const WATERMARK_TEXT_RE = /(made|created|built|designed|crafted|proudly powered|powered|runs on|hosted by)\s+(in|with|by|on)\s+(framer|webflow|wix|wix\.com|wordpress|squarespace|godaddy|weebly|strikingly|carrd|tilda|readymag)\b/i;
+  const FRAMER_EXPLICIT_RE = /(made in framer|built with framer|crafted in framer|designed in framer|create a free website|framer\.com|framer\.site)/i;
+
+  const candidates = $('a, p, span, div, footer, small, li, h1, h2, h3, [aria-label], [title]');
+  candidates.each((_, el) => {
+    const text = ($(el).text() || '').replace(/\s+/g, ' ').trim();
+    const ariaLabel = $(el).attr('aria-label') || '';
+    const titleAttr = $(el).attr('title') || '';
+    const href = $(el).attr('href') || '';
+    const combined = `${text} ${ariaLabel} ${titleAttr} ${href}`.toLowerCase();
+
+    if (!combined || combined.length > 250) return;
+
+    const isWatermark =
+      WATERMARK_TEXT_RE.test(combined) ||
+      FRAMER_EXPLICIT_RE.test(combined) ||
+      /framer\.com/i.test(href) ||
+      /webflow\.com/i.test(href) ||
+      /wix\.com/i.test(href);
+
+    if (isWatermark) {
+      const parent = $(el).parent();
+      // If the parent is a small wrapper around this badge link, remove the parent container
+      if (parent.length && parent.text().trim().length < 80 && parent[0]?.tagName !== 'body' && parent[0]?.tagName !== 'html') {
+        parent.remove();
+      } else {
+        $(el).remove();
+      }
+    }
+  });
+
+  // 4. Clean up any empty fixed/absolute container wrappers left over after badge removal
+  $('[style*="fixed"], [style*="absolute"]').each((_, el) => {
+    if ($(el).text().trim() === '' && $(el).find('img, svg, iframe, canvas').length === 0) {
       $(el).remove();
     }
   });
