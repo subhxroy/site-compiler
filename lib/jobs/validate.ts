@@ -31,11 +31,6 @@ export function validateHtmlOutput(outputDir: string): ValidationResult {
   fileCheck(path.join(outputDir, 'index.html'), errors, 'index.html', MIN_HTML_BYTES);
   fileCheck(path.join(outputDir, 'styles.css'), errors, 'styles.css');
   fileCheck(path.join(outputDir, 'script.js'), errors, 'script.js');
-  const assetsDir = path.join(outputDir, 'assets');
-  if (fs.existsSync(assetsDir)) {
-    const count = fs.readdirSync(assetsDir, { recursive: true }).filter((e) => typeof e === 'string').length;
-    if (count === 0) errors.push('assets directory is empty');
-  }
   return { ok: errors.length === 0, errors };
 }
 

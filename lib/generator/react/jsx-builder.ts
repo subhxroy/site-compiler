@@ -19,6 +19,28 @@ export function sanitizeComponentName(name: string, index: number): string {
   return clean;
 }
 
+function convertStyleStringToJsxObject(styleString: string): string {
+  if (!styleString) return '{}';
+  const declarations = styleString.split(';').filter((s) => s.trim().length > 0);
+  const props: string[] = [];
+
+  for (const decl of declarations) {
+    const colonIdx = decl.indexOf(':');
+    if (colonIdx < 0) continue;
+    const rawProp = decl.slice(0, colonIdx).trim();
+    const rawVal = decl.slice(colonIdx + 1).trim();
+    if (!rawProp || !rawVal) continue;
+
+    const jsProp = rawProp
+      .replace(/^-ms-/, 'ms-')
+      .replace(/-([a-z])/g, (_, g1) => g1.toUpperCase());
+    const safeVal = rawVal.replace(/'/g, "\\'");
+    props.push(`${jsProp}: '${safeVal}'`);
+  }
+
+  return `{ ${props.join(', ')} }`;
+}
+
 function convertCheerioElementToJsx(
   $: cheerio.CheerioAPI,
   element: AnyNode,
@@ -57,6 +79,20 @@ function convertCheerioElementToJsx(
     readonly: 'readOnly',
     maxlength: 'maxLength',
     srcset: 'srcSet',
+    'fill-rule': 'fillRule',
+    'fill-opacity': 'fillOpacity',
+    'stroke-width': 'strokeWidth',
+    'stroke-linecap': 'strokeLinecap',
+    'stroke-linejoin': 'strokeLinejoin',
+    'stroke-miterlimit': 'strokeMiterlimit',
+    'stroke-dasharray': 'strokeDasharray',
+    'stroke-dashoffset': 'strokeDashoffset',
+    'stroke-opacity': 'strokeOpacity',
+    'clip-rule': 'clipRule',
+    'clip-path': 'clipPath',
+    viewbox: 'viewBox',
+    'xmlns:xlink': 'xmlnsXlink',
+    'xlink:href': 'xlinkHref',
   };
 
   const attribSeen = new Set<string>();
@@ -76,7 +112,7 @@ function convertCheerioElementToJsx(
     if (jsxKey === 'style') {
       // Convert inline styles to Tailwind utilities. If conversion is unsafe
       // (url(), quotes, complex values) it returns '' and we keep the original
-      // style attribute so no styling is silently lost.
+      // style attribute as a valid React JSX style object so no styling is lost.
       const twClasses = convertStyleStringtoTailwind(val);
       if (twClasses) {
         const safeTw = twClasses.replace(/"/g, "'");
@@ -91,7 +127,7 @@ function convertCheerioElementToJsx(
           attribSeen.add('className');
         }
       } else {
-        attributes.push(`style="${val.replace(/"/g, '\\"')}"`);
+        attributes.push(`style={${convertStyleStringToJsxObject(val)}}`);
       }
     } else if (val === '' || val === undefined) {
       attributes.push(jsxKey);

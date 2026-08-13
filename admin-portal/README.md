@@ -5,8 +5,9 @@ This repository contains the standalone **Admin Portal** for SiteCompiler, desig
 ## Features
 - **User Management & Access Control**: View all registered users and toggle export permissions (`canExport: true / false`).
 - **Role Assignment**: Assign roles (`User`, `Pro Member`, `Administrator`).
+- **Payment Approval Queue**: Review UPI payment submissions (`export_approvals`) and approve/reject — approval flips `paymentApproved` in Firestore **and** mirrors it into the backend's in-memory store, and re-triggers a failed/cancelled export job (payment-triggered restart).
 - **Render Backend Engine Inspector**: Live health check & uptime monitor connecting to `https://site-compiler.onrender.com/health`.
-- **System Metrics**: Real-time stats on total users, total saved exports, and active compilations.
+- **System Metrics**: Real-time stats on total users, total saved exports, and engine status/uptime/memory.
 
 ## Local Execution
 To run the Admin Portal locally on port 3002:
@@ -20,8 +21,10 @@ npm run dev
 Open `http://localhost:3002`.
 
 ## Deployment to Custom Domain
-1. Connect the `admin-portal` folder or branch to Vercel / Netlify / Cloudflare Pages.
+1. Build a static export (`output: 'export'`) and connect the `admin-portal` folder to Vercel / Netlify / Cloudflare Pages.
 2. Set Environment Variables:
    - `NEXT_PUBLIC_MAIN_SITE_URL`: `https://site-compiler.netlify.app`
-   - `NEXT_PUBLIC_API_URL`: `https://site-compiler.onrender.com`
+   - `NEXT_PUBLIC_API_URL`: `https://site-compiler.onrender.com` (used for the engine health inspector)
 3. Point your custom domain (e.g. `admin.sitecompiler.app`) to the deployment.
+
+All admin API calls go against the **main site's** `/api/admin/*` routes with a Firebase ID token Bearer header (the portal itself is `noindex` and has no backend of its own).

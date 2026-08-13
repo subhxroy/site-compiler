@@ -4,11 +4,11 @@
 
 **Convert any published website into production-ready Static HTML, React TSX, or Next.js 16 + Tailwind CSS codebases.**
 
-[![Next.js 16](https://img.shields.io/badge/Next.js-15.1-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
-[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
-[![Firebase](https://img.shields.io/badge/Firebase-11.0-FFCA28?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
+[![Firebase](https://img.shields.io/badge/Firebase-12-FFCA28?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 [Demo](https://site-compiler.netlify.app) · [Features](#-key-features) · [Quickstart](#-quickstart) · [Architecture](#-architecture) · [API Documentation](#-api-reference)
@@ -39,8 +39,8 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
   - Live progress logs streaming directly to a dark-mode terminal console.
   - Responsive multi-viewport preview switcher (Desktop, Tablet, Mobile).
   - State preservation across page reloads via URL `?jobId=` and `localStorage`.
-- **🚀 Automated Garbage Collection**:
-  - Built-in background queue cleanup to purge stale temporary crawl files and ZIP archives.
+- **🚀 Job Lifecycle & Watchdogs**:
+  - 24h job retention with lazy cleanup (stale crawl dirs + ZIPs purged on every new job); 5-min per-job watchdog force-fails hung phases; 2.5-min crawl budget so a slow site can't hang the queue.
 
 ---
 
@@ -75,7 +75,7 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
                                                          |
                                                          v
                                     +-----------------------------------------+
-                                    |  JSZip Packaging Engine & Download API  |
+                                    |  AdmZip Packaging Engine & Download API  |
                                     +-----------------------------------------+
                                                          |
                                                          v
@@ -90,7 +90,7 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
 
 ### Prerequisites
 
-- **Node.js**: `v18.17.0` or higher
+- **Node.js**: `v20+` (Render and Netlify both pin Node 20)
 - **npm** or **pnpm** / **yarn**
 
 ### Installation
@@ -112,22 +112,24 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
    ```
 
 4. **Configure Environment Variables**:
-   Create a `.env.local` file in the root directory:
+   Create a `.env.local` file in the root directory (see `.env.example`):
    ```env
-   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   PORT=3000
+   NEXT_PUBLIC_API_URL=http://localhost:3001      # Backend engine base (dev → Express on :3001)
+   RENDER_BACKEND_URL=http://localhost:3001       # Direct browser→backend calls (bypasses the Netlify proxy)
+   FRONTEND_URL=http://localhost:3000             # Origin the backend's CORS allowlist accepts
 
-   # Firebase Client Config (Optional - get values from Firebase Console > Project Settings)
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key_here
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=000000000000
-   NEXT_PUBLIC_FIREBASE_APP_ID=1:000000000000:web:0000000000000000
+   # Firebase Admin (optional in dev — required for payment approvals, admin sync, history)
+   FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account", ...}
    ```
+
+   Firebase *client* keys (`NEXT_PUBLIC_FIREBASE_API_KEY`, authDomain, projectId, etc.) are **optional**: `lib/firebase/config.ts` ships hardcoded dev fallbacks and skips Firebase init entirely when the API key is unset.
 
 5. **Start Development Server**:
    ```bash
-   npm run dev
+   npm run dev        # frontend only (:3000)
+   # or
+   npm run dev:all    # Next :3000 + Express engine :3001 + admin portal :3002
    ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -138,33 +140,37 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ```
 site-compiler/
-├── app/                        # Next.js 16 App Router Routes
-│   ├── api/                    # API Endpoints (crawling, jobs, user sync, downloads)
-│   ├── blog/                   # Blog & SEO Articles
-│   ├── docs/                   # Developer Documentation Pages
-│   ├── features/               # Platform Features Page
-│   ├── history/                # User Saved Export Cockpit
-│   ├── pricing/                # Plan & Pricing Options
-│   ├── status/                 # System Status Page
-│   ├── layout.tsx              # Root Layout with AuthProvider & Navigation
-│   └── page.tsx                # Main Interactive SiteCompiler Workspace
-├── components/                 # UI Component Library
-│   ├── auth-modal.tsx          # Firebase Sign-In / Sign-Up Modal
-│   ├── footer.tsx              # Footer Component
-│   ├── navbar.tsx              # Navigation Bar & Profile Avatar Dropdown
-│   └── ui/                     # Reusable UI Atoms (Buttons, Cards, Badges)
-├── lib/                        # Core Compilation Engine & Utilities
-│   ├── crawler/                # Playwright DOM Extractor & Page Capture
-│   ├── firebase/               # Firebase Client & Admin SDK Configurations
-│   ├── generator/              # HTML, React TSX, & Next.js Code Generators
-│   ├── jobs/                   # In-Memory Queue & Garbage Collection
-│   └── seo/                    # Schema.org JSON-LD & OpenGraph Generators
-├── public/                     # Static Brand Assets & Favicons
-├── exports/                    # Local Temporary Output Directory (Git-Ignored)
-├── firestore.rules             # Firebase Firestore Security Rules
-├── firebase.json               # Firebase CLI Deployment Spec
-├── package.json                # Dependencies & Project Metadata
-└── README.md                   # Project Documentation
+├── app/                        # Next.js 16 App Router routes
+│   ├── (exports)/              # 15 SEO landing pages (Framer/Webflow/Wix → Next.js 16, …)
+│   ├── admin/                  # In-app admin console (users, approvals, engine health)
+│   ├── api/                    # Serverless API: export, payment, job status/cancel/restart/download, admin, user, health, og
+│   ├── blog/ docs/ changelog/ features/ pricing/ roadmap/ status/
+│   ├── about/ contact/ privacy/ terms/ history/
+│   ├── layout.tsx              # Root layout with AuthProvider & Navigation
+│   └── page.tsx                # Main interactive compiler workspace (client-page)
+├── components/                 # UI: navbar, footer, auth-modal, paywall-modal, export-page-template
+├── lib/                        # Core compilation engine & utilities
+│   ├── crawler/                # Playwright capture (screenshots, assets, crawl watchdog)
+│   ├── parser/                 # dom-cleaner, css-parser, asset-pipeline
+│   ├── detector/               # Anthropic section detection (+ heuristic fallback)
+│   ├── generator/              # HTML + Next.js/React generators, JSX builder, Tailwind mapper, animation shim
+│   ├── jobs/                   # Job state machine, pipeline orchestrator, validators
+│   ├── zip/                    # AdmZip packaging (README, offline assets)
+│   ├── firebase/               # Client + Admin SDK, auth-context, verify-admin, approval-status
+│   ├── security/               # SSRF guards (lexical + DNS-rebind), rate limiter
+│   ├── seo/                    # JSON-LD schema builders + metadata + OG route
+│   └── content/                # MDX loaders + RSS/Atom/JSON feeds
+├── server/                     # Express backend (Render) — engine API + payment mirror
+├── scripts/                    # keep-alive + test harness (phase1–4, smoke, e2e, mock-job)
+├── content/                    # MDX sources (blog, docs)
+├── admin-portal/               # Standalone static admin app (admin.sitecompiler.app)
+├── public/                     # Brand assets + .well-known/security.txt
+├── exports/                    # Temp job output (git-ignored)
+├── firestore.rules             # Firebase Firestore security rules
+├── firebase.json               # Firebase CLI deployment spec
+├── render.yaml                 # Render blueprint (sitecompiler-backend, Node 20, chromium)
+├── netlify.toml                # Netlify frontend config (Node 20)
+└── package.json                # Dependencies & project metadata
 ```
 
 ---
