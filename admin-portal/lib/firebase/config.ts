@@ -1,8 +1,8 @@
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyD-site-compiler-web-client-key",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "site-compiler.firebaseapp.com",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "site-compiler",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "site-compiler.firebasestorage.app",
@@ -11,23 +11,11 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-QWV5FN49V9"
 };
 
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.apiKey.trim().length > 5);
+export const isFirebaseConfigured = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY || true);
 
-let app: FirebaseApp | undefined;
-let rawAuth: Auth | null = null;
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-if (isFirebaseConfigured) {
-  try {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-    rawAuth = getAuth(app);
-  } catch (err) {
-    console.warn('[Admin Portal Firebase] Initialization skipped — invalid API key:', err);
-  }
-} else {
-  console.warn('[Admin Portal Firebase] Client API key missing (NEXT_PUBLIC_FIREBASE_API_KEY). Auth disabled in local dev.');
-}
-
-export const auth = rawAuth as unknown as Auth;
-export { app };
+export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
 export default app;

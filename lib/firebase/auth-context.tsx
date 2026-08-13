@@ -74,14 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let unsubscribe = () => {};
 
-    if (!isFirebaseConfigured || !auth) {
-      setLoading(false);
-      clearTimeout(timer);
-      return;
-    }
-
     try {
-      unsubscribe = onAuthStateChanged(
+      if (auth) {
+        unsubscribe = onAuthStateChanged(
         auth,
         async (currentUser: User | null) => {
           clearTimeout(timer);
@@ -133,10 +128,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!error?.message?.includes('closing')) {
             console.error('[Firebase Auth Error]', error);
           }
-          setLoading(false);
         }
       );
-    } catch {
+    }
+  } catch {
       clearTimeout(timer);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);

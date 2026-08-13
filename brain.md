@@ -65,7 +65,7 @@ codify/
 ### `package.json`
 - name `sitecompiler` v0.1.0. Scripts:
   - `dev` → Next dev (frontend only, :3000)
-  - `dev:all` → `server.js` (spawns all three portals)
+  - `dev:all` → `server.js` (spawns all three portals); `dev:admin` is the same script (alias)
   - `build` → Next build (Sentry plugin wraps it)
   - `start:backend` / `start:frontend` / `keep-alive` / `lint`
 - Dependencies: `next@16.3.0`, `react@19.2.8`, `firebase`, `@anthropic-ai/sdk`, `playwright` + `playwright-core`, `cheerio`, `postcss`, `adm-zip`, `ts-morph`, `gray-matter`, `feed`, `lucide-react`, `prettier`, Sentry, PostHog, `express`, `cors`, `typescript`, `@types/node`.
@@ -142,10 +142,10 @@ codify/
 - `client-page.tsx` = the product. 'use client'. Everything on one screen:
   - URL input + format selector (html/react/nextjs, default html) with format cards + "Fastest" badge.
   - Requires sign-in before export (`AuthModal` opens if anonymous).
-  - **Export job creation calls the Render backend DIRECTLY** (`getDirectBackendUrl('/api/export')`) — bypasses Netlify's 10s serverless timeout. Status/cancel/download still proxy through `/api` (they're fast). Local dev falls back to the relative proxy. **One silent retry** after a 2s pause on 502/503/cold-start before surfacing an error.
+  - **Export job creation calls the Render backend DIRECTLY** (`getDirectBackendUrl('/api/export')`) — bypasses Netlify's 10s serverless timeout. Sends a **per-click idempotency key** (`req_<ts>_<rand>` via `x-idempotency-key`) so duplicate clicks reuse the same backend job instead of spawning copies. **Up to 3 attempts** with backoff (`attempts × 2s`) on 502/503/cold-start before surfacing an error. Status/cancel/download still proxy through `/api` (they're fast). Local dev falls back to the relative proxy.
   - On success stores `jobId` in `localStorage('sitecompiler_active_job_id')` and as `?jobId=` query param (history.replaceState).
   - On mount, restores in-flight/old job from query/localStorage and refetches status.
-  - Polls `/api/job/:id/status` every 1s; **if the Netlify proxy returns non-200, falls back to the direct Render status endpoint** (`getDirectBackendUrl`). **Keeps polling past `completed` while payment is submitted-but-unapproved** so the Download button unlocks live once admin approves.
+  - Polls the **direct Render status endpoint** every 1.5s (`getDirectBackendUrl` → relative proxy in dev; this is the prod path, not the Netlify proxy). **Keeps polling past `completed` while payment is submitted-but-unapproved** so the Download button unlocks live once admin approves. Client **5-minute watchdog** force-fails the job (backend unreachable / took too long), and **30 consecutive poll errors** mark it `failed` too; 404 mid-poll = job expired on backend.
   - `beforeunload` warning while exporting (background process continues server-side).
   - On completed + signed-in, auto-saves record via `saveUserExport()` (Firestore `user_exports`).
   - **Download flow:** approved OR admin → plain `<a download>` to backend `/api/job/:id/download`. Admin free-pass uses authenticated fetch + blob (an anchor can't carry the Firebase ID token the bypass needs).
@@ -211,7 +211,7 @@ Each is a thin data file feeding `components/export-page-template.tsx` (`ExportP
 Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bearer-ID-token guard, JSON error envelopes.
 
 ### `api/export/route.ts`
-- POST. Body `{ url, format }` (format defaults to `nextjs`). Rate-limited 15/min (`rate-limit.ts`). SSRF-guards the URL, then proxies to the Render backend or runs the engine in-process (local dev) — returns `{ jobId }`. **Primary path no longer uses this route in prod** (the browser calls Render directly to dodge the Netlify 10s timeout); it survives as the serverless fallback for local dev / non-browser callers.
+- POST. Body `{ url, format }` (format defaults to `nextjs`). Rate-limited 15/min (`rate-limit.ts`). SSRF-guards the URL, then proxies to the Render backend or runs the engine in-process (local dev) — returns `{ jobId }`. **Primary path no longer uses this route in prod** (the browser calls Render directly to dodge the Netlify 10s timeout); it survives as the serverless fallback for local dev / non-browser callers. Forwards the caller's `x-idempotency-key` header to the backend (and to `createJob` in local mode) so retried export clicks dedupe.
 - Uses the **fast lexical `validateUrlForSsrf`** (the DNS-resolving async check moved to the pipeline's `captureSite`, where it runs against Render's compute budget, not Netlify's).
 - Proxy hop: `AbortController` with an 8.5s timeout (inside Netlify's 10s budget); non-JSON responses (e.g. Render cold-start 502/504 HTML) and aborts → `503 { isColdStart: true }` so the client retries instead of showing a dead error.
 
@@ -297,15 +297,20 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - **Health endpoints registered BEFORE CORS** (`/health`, `/api/health`) so Render's deploy scanner always gets a 200 even if a proxy strips Origin. Return uptime + memory.
 - **Process-level crash guards**: `uncaughtException` + `unhandledRejection` handlers log and keep the process alive — a single failed job must not take the port down.
 - Security headers: nosniff, `X-Frame-Options: SAMEORIGIN`, XSS protection, `Referrer-Policy: strict-origin-when-cross-origin` (now applied *after* CORS/json body parsing, still before routes).
-- CORS allowlist: `localhost`/`127.0.0.1` + `FRONTEND_URL` origin + extra `CORS_ORIGINS`. **Origin-less server-to-server requests are always allowed** (Netlify proxy calls, curl/keep-alive). No `credentials` flag.
-- **Export endpoint responds with `{ jobId }` BEFORE `processExportJob` runs** (response flushed first, job re-validates the URL in `captureSite`/`validateUrlForSsrfAsync` before any network fetch). Uses the **fast lexical `validateUrlForSsrf`** on this hop — the async DNS check already ran on the Netlify layer; DNS lookup was the bottleneck that blew Netlify's 10s timeout.
-- Mounts engine endpoints: export start, status, download, screenshot, health, plus **cancel** (`POST /api/job/:id/cancel`) and **payment-triggered restart** (`POST /api/job/:id/restart`, admin-bypass gated via `ADMIN_BYPASS_SECRET`, restartable only from `completed`/`failed`/`cancelled`).
+- CORS allowlist: `localhost`/`127.0.0.1` + `.netlify.app` hosts + `FRONTEND_URL` origin + extra `CORS_ORIGINS`. **Origin-less server-to-server requests are always allowed** (Netlify proxy calls, curl/keep-alive). No `credentials` flag. `allowedHeaders` explicitly includes `x-idempotency-key` + `x-sitecompiler-admin-bypass`.
+- **Export endpoint responds with `{ jobId }` BEFORE `processExportJob` runs** (response flushed first, job re-validates the URL in `captureSite`/`validateUrlForSsrfAsync` before any network fetch). Uses the **fast lexical `validateUrlForSsrf`** on this hop — the async DNS check already ran on the Netlify layer; DNS lookup was the bottleneck that blew Netlify's 10s timeout. Reads the `x-idempotency-key` (header or body `idempotencyKey`); if the key maps to an **active** job, it returns that job and skips re-running the pipeline (`isNewJob` gate) — duplicate clicks can't spawn parallel crawls. Express `express-rate-limit` (15/min) also guards this route.
+- **Download endpoint** serves the ZIP only when `status === completed`; without `paymentApproved` it requires **either** the `x-sitecompiler-admin-bypass` secret header **or a verified Firebase admin ID token** (Bearer → `adminAuth.verifyIdToken` → `ADMIN_EMAILS` allowlist) — fail-closed.
+- Mounts engine endpoints: export start, status, download, screenshot, health, plus **cancel** (`POST /api/job/:id/cancel`), **payment-triggered restart** (`POST /api/job/:id/restart`, admin-bypass gated via `ADMIN_BYPASS_SECRET`, restartable only from `completed`/`failed`/`cancelled`), and a **payment-submission mirror** (`POST /api/job/:id/payment`, writes `paymentSubmitted` + sender/UTR/email into the in-memory job — the Firestore write on the Netlify side is the prod source of truth; this mirrors it for local/raw-backend callers).
+- **Screenshot endpoint**: validates `type` ∈ desktop/tablet/mobile, checks two path candidates (`exports/{id}/raw/screenshots/*.png` + `exports/{id}/screenshots/*.png`), falls back to the desktop frame, and finally serves a **dynamically generated SVG placeholder** ("SiteCompiler Live Preview") so the preview `<img>` never breaks.
 
 ### `lib/jobs/store.ts` — Job state machine
 - `JobStatus` enum: `pending, crawling, parsing, validating, detecting, generating, validating-output, zipping, completed, failed, cancelled`.
-- `JobState`: id, url, format, status, progressMessage, logs[], payment fields (`paymentSubmitted`, `paymentApproved`), screenshot paths, zip info, error, `cancelledAt`.
-- **Retention: 24h default** (`EXPORT_RETENTION_MS`). Historically 10 minutes — too short for the pay → admin-approve → download flow (users could pay, then find the ZIP purged). `cleanupOldExportJobs()` runs on an interval; `ACTIVE_STATUSES` helper (includes the validating/validating-output phases, excludes terminal states).
+- `JobState`: id, url, format, status, progressMessage, logs[], payment fields (`paymentSubmitted`, `paymentApproved`), sender/UTR/email capture (`senderAccount`, `utrNumber`, `userEmail`), screenshot paths, zip info, error, `cancelledAt`.
+- **Retention: 24h default** (`EXPORT_RETENTION_MS`). Historically 10 minutes — too short for the pay → admin-approve → download flow (users could pay, then find the ZIP purged). `cleanupOldExportJobs()` runs **lazily on every `createJob`/`getJob` call** (never purges a dir while its job is still active), and each job also arms its own `setTimeout(RETENTION_MS)` auto-delete. `ACTIVE_STATUSES` helper (includes the validating/validating-output phases, excludes terminal states).
+- **Idempotency key store** — `idempotencyStore` maps a request key (`x-idempotency-key`) → `{ jobId, createdAt }`. `createJob(url, format, key)` returns the existing job when the key already maps to an active one; keys expire after 1h. This is what makes the client's retry loop safe against double-submit.
+- **Per-job watchdog**: `createJob` arms a `setTimeout(EXPORT_JOB_TIMEOUT_MS)` (default **5 min**, env-overridable) that force-fails the job if it's still active — a hung Playwright/LLM phase can't leave the job `pending` forever.
 - **Log timestamps stored in ISO 8601 format** (`new Date().toISOString()`) and stripped of ANSI escape sequences via `stripAnsi` helper before stringification.
+- **`toPublicJob` redacts PII** — beyond stripping ANSI, every log line's UTR number is masked (`UTR: [redacted]`) so a jobId leak can't harvest other users' bank/identity data.
 - `cancelExportJob(jobId)` — terminal `cancelled` transition + export-dir purge. `isJobActive(jobId)` — the flag the pipeline polls to stop a cancelled job at the next safe boundary.
 
 ### `lib/jobs/process.ts` — Pipeline orchestrator
@@ -326,7 +331,7 @@ Playwright crawler:
 - `sanitizeFilename`: `index_` prefix for reserved names; `urlToHtmlFilename`.
 - Executes **scroll sequences** to trigger lazy images, IntersectionObserver thresholds, and Framer Motion hydration before snapshotting the DOM.
 - **Responsive breakpoint screenshots**: direct `page.screenshot` (`animations: 'disabled'`, `scale: 'css'`), secondary body locator retry fallback, desktop frame copy fallback, and pure Node.js `createMinimalPngBuffer` fallback generator.
-- Subpage `gotoTimeout` tuned to 8000ms max for rapid multi-page crawling.
+- Subpage `gotoTimeout` tuned to 8000ms max for rapid multi-page crawling. **2.5-min crawl watchdog** (`MAX_CRAWL_DURATION_MS`): when the budget is hit, capture finalizes with whatever pages it has rather than hanging; crashed pages are re-queued for retry (retries don't re-check visited nor consume the page budget).
 - Downloads CSS, scripts, and assets (fonts/images/video/icons). Writes `raw/page.html`, `raw/meta.json`, `raw/screenshots/*.png`, `raw/assets_manifest.json`.
 
 ### `lib/parser/dom-cleaner.ts`
@@ -372,12 +377,14 @@ Playwright crawler:
 ## 9. Firebase Layer (`lib/firebase/`)
 
 ### `config.ts`
-- Client SDK. `firebaseConfig` from `NEXT_PUBLIC_FIREBASE_*` with **hardcoded fallbacks** (projectId `site-compiler`, appId, measurementId `G-QWV5FN49V9`, etc.) so dev works without env vars. `isFirebaseConfigured = Boolean(apiKey)`. Safe `getApps()` re-init. `setPersistence(browserLocalPersistence)` with `inMemoryPersistence` fallback. `googleProvider`.
+- Client SDK. `firebaseConfig` from `NEXT_PUBLIC_FIREBASE_*` with **hardcoded fallbacks** (projectId `site-compiler`, appId, measurementId `G-QWV5FN49V9`, etc.) so dev works without env vars.
+- **Guarded/lazy init**: `isFirebaseConfigured = Boolean(apiKey && apiKey.trim().length > 5)` (rejects blank/placeholder keys). Only when configured does it try `getApps()` re-init inside a try/catch; on failure or missing key it logs a warning and leaves `auth`/`app` **undefined** instead of throwing at import time (so local dev without an API key doesn't crash every page). `setPersistence(browserLocalPersistence)` with `inMemoryPersistence` fallback runs only when `rawAuth` exists. `googleProvider` always exported.
 
 ### `auth-context.tsx`
 - 'use client'. `AuthProvider`/`useAuth`. Exposes `user`, `loading`, `isAdmin`, `userRole`, sign-in/out methods, `saveUserExport`, `getUserExports`, `getIdToken`.
 - **2.5s safety timer** that force-clears `loading` if `onAuthStateChanged` never fires (prevents infinite spinner).
-- On sign-in: syncs profile to `/api/user/sync` with the ID token; sets `isAdmin` from server response (server decides, client trusts).
+- **`!auth` early bail** — when Firebase is unconfigured (see `config.ts`), the effect clears `loading` and returns without subscribing; sign-in/up methods throw a clear "set `NEXT_PUBLIC_FIREBASE_API_KEY`" error; `signOutUser` skips the Firebase call but still clears local admin state.
+- **Client-side admin fast-path**: `checkIsAdminEmail` matches the email against `NEXT_PUBLIC_ADMIN_EMAILS` (default `contact.subhroy-1@gmail.com,subhroy,whysaurjya`, substring match). It's only a *fast-path* for instant UI; on sign-in the profile syncs to `/api/user/sync` with the ID token and the **server response decides** `isAdmin`/`role` (client trusts server, server-side check is authoritative).
 - Error path filters `'closing'` (Firebase "Database is closing") silently.
 
 ### `admin.ts`
@@ -432,11 +439,14 @@ Playwright crawler:
 ### `scripts/`
 - `keep-alive.js` — see §4.
 - `create-test-user.ts` — upserts `testuser@sitecompiler.dev` / `TestUser12345!` ("Strix Test User") in Firebase Auth + Firestore `users/{uid}` (role `user`, `canExport: true`). For manual QA.
+- `setup-mock-job.ts` — exports `setupMockJob(jobId)`; scaffolds a fake `exports/{jobId}/raw/{pages,screenshots,styles,assets}` tree with mock HTML/CSS so later pipeline phases can be tested **without a live crawl**.
+- `test-backend-smoke.ts` — headless backend unit smoke: SSRF lexical guard (valid + blocked metadata URL), job lifecycle + idempotency-key store, status transitions, `toPublicJob` serialization, download-URL config. Throws on first failure.
+- `test-export-e2e.ts` — end-to-end export over HTTP. Spins up a local Express test server (`/health`, `/api/export` with SSRF + idempotency + `processExportJob`) or targets a remote backend (`BACKEND_URL` / `--prod` → Render), runs the full export flow with an idempotency key, then asserts status progression + ZIP download. Set `TEST_SITE_URL` to choose the target site.
 - `test-phase1.ts` — crawler smoke test: `captureSite` on a URL, asserts page.html size, css/script/asset counts, all three screenshots, meta.
 - `test-phase2.ts` — `buildHtmlExport` on the latest `test_phase1_*` job; asserts index.html/styles.css/script.js sizes + asset count.
 - `test-phase3.ts` — `detectSections` on latest job; prints sections, selector counts, renamed-class count, AI log dir.
 - `test-phase4.ts` — `detectSections` + `buildNextJsExport` end-to-end on latest job; prints generated components, app/page.tsx size, package.json presence.
-- Together they form a manual 4-phase pipeline harness (run 1→4 in order).
+- Together they form a manual multi-phase pipeline harness (run 1→4 in order; `setup-mock-job` can stand in for phase 1).
 
 ### `content/` (MDX)
 - Blog (3): `seo-best-practices-for-exported-websites`, `how-to-export-framer-website`, `webflow-to-react-clean-code`.
@@ -447,7 +457,7 @@ Playwright crawler:
 - Standalone Next.js app (own package.json: `sitecompiler-admin-portal` v1.0.0; firebase ^12.17.1, lucide-react ^1.28.0, next 16.3.0, react 19.2.8). Deployed to `admin.sitecompiler.app`.
 - `next.config.ts`: `output: 'export'` + images `unoptimized` (static hosting). Dev port 3002. `postcss.config.mjs` Tailwind v4. Layout is **noindex** (admin app must never rank) + strix-verification meta + `AuthProvider`.
 - `app/page.tsx`: client dashboard — approvals review, users table, stats cards (users/exports/engine health), all calls against the **main site's** admin APIs with Firebase ID token Bearer auth.
-- `lib/firebase/config.ts` + `auth-context.tsx`: mirrors the main portal's Firebase wiring; auth-context adds the same 2.5s loading fallback.
+- `lib/firebase/config.ts` + `auth-context.tsx`: mirrors the main portal's Firebase wiring; `config.ts` uses the same **guarded init** (`isFirebaseConfigured` with `trim().length > 5` + try/catch, `auth` may be undefined) and the auth-context adds the same 2.5s loading fallback.
 - `app/globals.css`: same `.raycast-key-card` / `.raycast-inset-input` treatment.
 - README documents env: `NEXT_PUBLIC_MAIN_SITE_URL` + `NEXT_PUBLIC_API_URL`. `out/` + `.next/` + `next-env.d.ts` + `tsconfig.tsbuildinfo` are build artifacts (gitignored output, source tracked).
 
@@ -471,10 +481,14 @@ Playwright crawler:
 10. **No real secrets in repo** — `.env.local` and service-account JSON are gitignored; `NEXT_PUBLIC_FIREBASE_API_KEY` fallback values in `config.ts` are publishable client keys (Netlify omits them from secret scan).
 11. **Two admin UIs exist** — `app/admin/page.tsx` (in this app) and `admin-portal/` (separate static app on `admin.sitecompiler.app`). Both hit the same `/api/admin/*` routes.
 12. **`exports/`, `pw-browsers/`, `out/`, `.next/`, `node_modules/`** are runtime/build artifacts, not source.
-13. **Browser→Render direct calls**: export creation and the status fallback hit `getDirectBackendUrl()` (Render origin) to dodge Netlify's 10s serverless timeout. This is why `server/index.ts` CORS allows the `FRONTEND_URL` origin + origin-less requests, and why the export route returns `{ jobId }` before processing (Render keeps an async 15/min rate limit).
-14. **`/api/job/:id/status` never 502s** — Firestore overlay is best-effort (`isFirebaseAdminConfigured` guard + try/catch), non-JSON backends → `503 isColdStart`, and the client falls back to the direct Render endpoint. If you see 502s from status, it's the *proxy/fetch layer*, not this route.
+13. **Browser→Render direct calls**: export creation and status polling hit `getDirectBackendUrl()` (Render origin) to dodge Netlify's 10s serverless timeout. This is why `server/index.ts` CORS allows the `FRONTEND_URL` origin + `.netlify.app` hosts + origin-less requests, and why the export route returns `{ jobId }` before processing (Render guards it with a 15/min express-rate-limit).
+14. **`/api/job/:id/status` never 502s** — Firestore overlay is best-effort (`isFirebaseAdminConfigured` guard + try/catch), non-JSON backends → `503 isColdStart`. The **browser no longer polls this proxy** — it polls the direct Render endpoint — but the route must stay healthy for the admin portal / history pages. If you see 502s from status, it's the *proxy/fetch layer*, not this route.
 15. **Node.js 24 child process `spawn EINVAL` on Windows** — `spawn` in Node 24 strictly validates child process `env` objects and rejects entries with `undefined` values. `server.js` filters `env` objects to clean strings and enables `shell: isWindows` for `.cmd` resolution.
 16. **ANSI stripping & ISO local timezone formatting** — server records log timestamps in ISO 8601 format (`new Date().toISOString()`) and strips ANSI control codes (`stripAnsi`); client components format timestamps into the user's browser local time zone (`toLocaleTimeString()` / `formatDateTime`).
+17. **Idempotency keys dedupe exports** — browser sends `x-idempotency-key` (`req_<ts>_<rand>`) on the export POST; the backend store maps it to the job (1h expiry) and returns the existing job for duplicate clicks, so the client's 3-attempt retry loop never spawns parallel crawls. CORS `allowedHeaders` must keep listing `x-idempotency-key`.
+18. **Watchdogs everywhere** — 2.5-min crawl watchdog (capture finalizes with captured pages), 5-min per-job watchdog (`EXPORT_JOB_TIMEOUT_MS` force-fails active jobs), 5-min client polling watchdog + 30-consecutive-error fail. A hung phase can't wedge the UI or leave a job `pending` forever.
+19. **`toPublicJob` redacts UTR** — public status payloads mask UTR numbers (`UTR: [redacted]`) and drop sender account / user email; jobId is unauthenticated, so PII must never ride the public shape.
+20. **Two admin unlock paths on download** — backend accepts the `x-sitecompiler-admin-bypass` secret header **or** a verified Firebase admin ID token (Bearer → `verifyIdToken` → `ADMIN_EMAILS` allowlist). Direct Render download calls work for admins even without the Netlify-side proxy secret.
 
 ---
 
