@@ -83,7 +83,7 @@ codify/
 - Flat config: `next/core-web-vitals` + `next/typescript`, ignores for `exports/`, `admin-portal/out/`, `.next/`.
 
 ### `server.js`
-- Dev orchestration: spawns Next (:3000), Express engine (:3001), admin-portal (:3002) concurrently. Used by `dev:all`.
+- Dev orchestration: spawns Next (:3000), Express engine (:3001), admin-portal (:3002) concurrently. Used by `dev:all`. Configured with `shell: isWindows` and clean string-only `env` objects (removing `undefined` properties) to prevent Node.js 24 `spawn EINVAL` errors on Windows.
 
 ### `AGENTS.md`
 - Next 16 divergence warning + auto-regenerated maintenance block (§1).
@@ -305,10 +305,11 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - `JobStatus` enum: `pending, crawling, parsing, validating, detecting, generating, validating-output, zipping, completed, failed, cancelled`.
 - `JobState`: id, url, format, status, progressMessage, logs[], payment fields (`paymentSubmitted`, `paymentApproved`), screenshot paths, zip info, error, `cancelledAt`.
 - **Retention: 24h default** (`EXPORT_RETENTION_MS`). Historically 10 minutes — too short for the pay → admin-approve → download flow (users could pay, then find the ZIP purged). `cleanupOldExportJobs()` runs on an interval; `ACTIVE_STATUSES` helper (includes the validating/validating-output phases, excludes terminal states).
+- **Log timestamps stored in ISO 8601 format** (`new Date().toISOString()`) and stripped of ANSI escape sequences via `stripAnsi` helper before stringification.
 - `cancelExportJob(jobId)` — terminal `cancelled` transition + export-dir purge. `isJobActive(jobId)` — the flag the pipeline polls to stop a cancelled job at the next safe boundary.
 
 ### `lib/jobs/process.ts` — Pipeline orchestrator
-Phases per job, in order: `crawl` (`captureSite`) → `parse` (`buildHtmlExport`) → **`validating`** (`validateHtmlOutput`) → `detect` (`detectSections`) → `generate` (`buildNextJsExport`) → **`validating-output`** (`validateNextOutput`, then `validateZip`) → `zip` (`createJobZip`). `throwIfCancelled` between every phase stops cancelled jobs cleanly (the catch handler skips failure-writing for cancelled jobs). **A job is only marked `completed` after every validation gate passes** — missing/empty output files or a ZIP leaking secrets/artifacts (`node_modules`, `.next`, `.git`, `.env`, service-account, raw crawl dirs) throws, and the job lands in `failed` instead.
+Phases per job, in order: `crawl` (`captureSite`) → `parse` (`buildHtmlExport`) → **`validating`** (`validateHtmlOutput`) → `detect` (`detectSections`) → `generate` (`buildNextJsExport`) → **`validating-output`** (`validateNextOutput`, then `validateZip`) → `zip` (`createJobZip`). `throwIfCancelled` between every phase stops cancelled jobs cleanly (the catch handler skips failure-writing for cancelled jobs). **A job is only marked `completed` after every validation gate passes** — missing/empty output files or a ZIP leaking secrets/artifacts (`node_modules`, `.next`, `.git`, `.env`, service-account, raw crawl dirs) throws, and the job lands in `failed` instead. Caught error messages are sanitized with `stripAnsi`.
 
 ### `lib/jobs/validate.ts`
 - `validateHtmlOutput` — index.html ≥1KB, styles.css, script.js, non-empty assets dir.
@@ -324,6 +325,8 @@ Playwright crawler:
 - `normalizeUrl`: strips hash, query string, trailing slash.
 - `sanitizeFilename`: `index_` prefix for reserved names; `urlToHtmlFilename`.
 - Executes **scroll sequences** to trigger lazy images, IntersectionObserver thresholds, and Framer Motion hydration before snapshotting the DOM.
+- **Responsive breakpoint screenshots**: direct `page.screenshot` (`animations: 'disabled'`, `scale: 'css'`), secondary body locator retry fallback, desktop frame copy fallback, and pure Node.js `createMinimalPngBuffer` fallback generator.
+- Subpage `gotoTimeout` tuned to 8000ms max for rapid multi-page crawling.
 - Downloads CSS, scripts, and assets (fonts/images/video/icons). Writes `raw/page.html`, `raw/meta.json`, `raw/screenshots/*.png`, `raw/assets_manifest.json`.
 
 ### `lib/parser/dom-cleaner.ts`
@@ -338,6 +341,7 @@ Playwright crawler:
 ### `lib/detector/section-detector.ts`
 - Anthropic SDK. `detectSections(jobId, cleanedHtml, desktopScreenshotPath)`.
 - `trimDomForAi`: strips `data:` URLs / srcset, truncates text nodes to ~150 chars to fit the model context.
+- **`runWithBoundedConcurrency`**: uses `Set<Promise<void>>` with `finally` cleanup for strict, bug-free bounded concurrency across AI section processing tasks.
 - `logAiResponse` writes raw AI exchange to `exports/{jobId}/ai-logs` (debuggability).
 - Returns `DetectedSection[]` with a `classRenameMap` mapping hashed platform classes (`framer-1a2b3c`) to semantic names (`framer-navbar`).
 
@@ -469,6 +473,8 @@ Playwright crawler:
 12. **`exports/`, `pw-browsers/`, `out/`, `.next/`, `node_modules/`** are runtime/build artifacts, not source.
 13. **Browser→Render direct calls**: export creation and the status fallback hit `getDirectBackendUrl()` (Render origin) to dodge Netlify's 10s serverless timeout. This is why `server/index.ts` CORS allows the `FRONTEND_URL` origin + origin-less requests, and why the export route returns `{ jobId }` before processing (Render keeps an async 15/min rate limit).
 14. **`/api/job/:id/status` never 502s** — Firestore overlay is best-effort (`isFirebaseAdminConfigured` guard + try/catch), non-JSON backends → `503 isColdStart`, and the client falls back to the direct Render endpoint. If you see 502s from status, it's the *proxy/fetch layer*, not this route.
+15. **Node.js 24 child process `spawn EINVAL` on Windows** — `spawn` in Node 24 strictly validates child process `env` objects and rejects entries with `undefined` values. `server.js` filters `env` objects to clean strings and enables `shell: isWindows` for `.cmd` resolution.
+16. **ANSI stripping & ISO local timezone formatting** — server records log timestamps in ISO 8601 format (`new Date().toISOString()`) and strips ANSI control codes (`stripAnsi`); client components format timestamps into the user's browser local time zone (`toLocaleTimeString()` / `formatDateTime`).
 
 ---
 
