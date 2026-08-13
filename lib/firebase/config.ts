@@ -2,7 +2,7 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, inMemoryPersistence, Auth } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDNiWJk2XFi0Q5IKv_1QLlyoMeYI8k9EEs",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "site-compiler.firebaseapp.com",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "site-compiler",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "site-compiler.firebasestorage.app",
@@ -11,7 +11,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-QWV5FN49V9"
 };
 
-export const isFirebaseConfigured = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY && process.env.NEXT_PUBLIC_FIREBASE_API_KEY.trim().length > 5);
+export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.apiKey.trim().length > 5);
 
 let app: FirebaseApp | undefined;
 let auth: Auth | null = null;
@@ -21,10 +21,8 @@ if (firebaseConfig.apiKey) {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
     auth = getAuth(app);
   } catch (err) {
-    console.warn('[Firebase Config] Auth initialization skipped:', (err as Error)?.message || err);
+    console.warn('[Firebase Config] Auth initialization warning:', (err as Error)?.message || err);
   }
-} else {
-  console.warn('[Firebase Config] NEXT_PUBLIC_FIREBASE_API_KEY is missing. Auth is disabled for local dev.');
 }
 
 if (auth && typeof window !== 'undefined') {
