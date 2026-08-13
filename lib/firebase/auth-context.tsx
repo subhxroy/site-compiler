@@ -9,7 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { auth, googleProvider } from './config';
+import { auth, googleProvider, isFirebaseConfigured } from './config';
 
 export interface UserExportRecord {
   id?: string;
@@ -73,6 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 2500);
 
     let unsubscribe = () => {};
+
+    if (!isFirebaseConfigured || !auth) {
+      setLoading(false);
+      clearTimeout(timer);
+      return;
+    }
 
     try {
       unsubscribe = onAuthStateChanged(
@@ -143,19 +149,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
     await signInWithPopup(auth, googleProvider);
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
+    if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
     await signInWithEmailAndPassword(auth, email, pass);
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
+    if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
     await createUserWithEmailAndPassword(auth, email, pass);
   };
 
   const signOutUser = async () => {
-    await firebaseSignOut(auth);
+    if (auth) {
+      await firebaseSignOut(auth);
+    }
     setIsAdmin(false);
     setUserRole('user');
   };

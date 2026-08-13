@@ -1,5 +1,5 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, inMemoryPersistence, Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
@@ -11,19 +11,29 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-QWV5FN49V9"
 };
 
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey);
+export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.apiKey.trim().length > 5);
 
-// Initialize Firebase App safely
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+let app: FirebaseApp | undefined;
+let rawAuth: Auth | null = null;
 
-export const auth = getAuth(app);
+if (isFirebaseConfigured) {
+  try {
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+    rawAuth = getAuth(app);
+  } catch (err) {
+    console.warn('[Firebase Config] Initialization skipped — invalid API key:', err);
+  }
+} else {
+  console.warn('[Firebase Config] Client API key missing (NEXT_PUBLIC_FIREBASE_API_KEY). Firebase Auth is disabled in local dev.');
+}
 
-if (typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence).catch(() => {
-    setPersistence(auth, inMemoryPersistence).catch(() => {});
+if (rawAuth && typeof window !== 'undefined') {
+  setPersistence(rawAuth, browserLocalPersistence).catch(() => {
+    if (rawAuth) setPersistence(rawAuth, inMemoryPersistence).catch(() => {});
   });
 }
 
+export const auth = rawAuth as unknown as Auth;
+export { app };
 export const googleProvider = new GoogleAuthProvider();
-
 export default app;
