@@ -6,22 +6,15 @@ function isAdminEmail(email: string): boolean {
   const e = (email || '').toLowerCase().trim();
   if (!e) return false;
 
-  // Exact allowlist wins when configured (comma-separated in ADMIN_EMAILS).
-  const allowlist = (process.env.ADMIN_EMAILS || '')
+  // Exact allowlist matching only. Substring checks are forbidden to prevent
+  // privilege escalation from attacker emails containing owner keywords.
+  const defaultAdminEmails = ['contact.subhroy-1@gmail.com', 'contact.subhroy@gmail.com', 'subhxroy@gmail.com'];
+  const allowlist = (process.env.ADMIN_EMAILS || defaultAdminEmails.join(','))
     .split(',')
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean);
-  if (allowlist.length > 0) {
-    return allowlist.includes(e);
-  }
 
-  // Fallback: verified-token email keywords for the owner's own accounts.
-  // NOTE: 'admin' substring is intentionally NOT included — it is trivially
-  // spoofable (e.g. someone@admin.example.com) and was the root of a
-  // privilege-escalation bug. Only emails that actually contain the owner's
-  // unique identifiers can ever be promoted this way, and the email itself
-  // comes from a verified Firebase ID token, never from the client body.
-  return e.includes('subhroy') || e.includes('whysaurjya');
+  return allowlist.includes(e);
 }
 
 export async function POST(req: Request) {

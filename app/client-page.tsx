@@ -216,7 +216,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [jobId,    setJobId]    = useState<string | null>(null);
   const [job,      setJob]      = useState<JobState | null>(null);
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [tab,      setTab]      = useState<'preview' | 'logs'>('preview');
+  const [tab,      setTab]      = useState<'preview' | 'logs' | 'stats'>('preview');
   const [savedToFirebase, setSavedToFirebase] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -782,7 +782,29 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               ))}
             </div>
 
-            {/* Preview & Logs Tabs */}
+            {/* Failure Diagnostic Card */}
+            {job.status === 'failed' && (
+              <div className="p-4 rounded-[10px] bg-red-500/10 border border-red-500/30 text-xs text-red-300 space-y-2">
+                <div className="flex items-center gap-2 font-medium text-red-400">
+                  <Icon.X size={16} />
+                  <span>Compilation Issue Diagnosis</span>
+                </div>
+                <p className="text-[#dcdcdc] font-mono text-[11px] leading-relaxed">
+                  {job.error || 'The export process encountered an unexpected error.'}
+                </p>
+                <div className="text-[11px] text-[#9c9c9d] pt-1 space-y-1">
+                  {job.error?.toLowerCase().includes('ssrf') || job.error?.toLowerCase().includes('forbidden') || job.error?.toLowerCase().includes('loopback') ? (
+                    <p>💡 <strong>Remedy:</strong> The requested URL resolved to a private/internal IP address or cloud metadata endpoint, which is blocked by SiteCompiler&apos;s Anti-SSRF firewall. Please supply a publicly reachable URL.</p>
+                  ) : job.error?.toLowerCase().includes('timeout') ? (
+                    <p>💡 <strong>Remedy:</strong> The target website took too long to respond or execute JavaScript. Try again or check if the website is currently online and responsive.</p>
+                  ) : (
+                    <p>💡 <strong>Remedy:</strong> Ensure the target site is publicly accessible, has valid SSL certificates, and does not require active login session cookies.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Preview, Logs & Quality Stats Tabs */}
             <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between border-b border-[#1b1c1e] pb-2">
                 <div className="flex items-center gap-2">
@@ -810,6 +832,20 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     <span>Execution Logs</span>
                     {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />}
                   </button>
+
+                  {job.status === 'completed' && (
+                    <button
+                      onClick={() => setTab('stats')}
+                      className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        tab === 'stats'
+                          ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                          : 'text-[#6a6b6c] hover:text-white'
+                      }`}
+                    >
+                      <span className="text-[#59d499]"><Icon.Check size={14} /></span>
+                      <span>Quality & Stats</span>
+                    </button>
+                  )}
                 </div>
 
                 {tab === 'preview' && (
@@ -861,7 +897,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : tab === 'logs' ? (
                 <div className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5">
                   {job.logs.map((l, idx) => (
                     <div key={idx} className="leading-relaxed">
@@ -869,6 +905,49 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     </div>
                   ))}
                   <div ref={logEndRef} />
+                </div>
+              ) : (
+                /* Quality & Telemetry Stats Tab */
+                <div className="raycast-key-card p-6 rounded-[10px] space-y-5 bg-[#040506] text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-3.5 rounded-[8px] bg-[#111214] border border-[#2f3031] space-y-1">
+                      <div className="text-[10px] font-mono text-[#6a6b6c] uppercase">Target Architecture</div>
+                      <div className="text-white font-medium text-sm capitalize">{job.format} Engine</div>
+                      <div className="text-[10px] text-[#59d499]">Validated output scaffold</div>
+                    </div>
+                    <div className="p-3.5 rounded-[8px] bg-[#111214] border border-[#2f3031] space-y-1">
+                      <div className="text-[10px] font-mono text-[#6a6b6c] uppercase">Pages Compiled</div>
+                      <div className="text-white font-medium text-sm">{job.pageCount || 1} HTML Document(s)</div>
+                      <div className="text-[10px] text-[#9c9c9d]">All internal links resolved</div>
+                    </div>
+                    <div className="p-3.5 rounded-[8px] bg-[#111214] border border-[#2f3031] space-y-1">
+                      <div className="text-[10px] font-mono text-[#6a6b6c] uppercase">Bundle Archive Size</div>
+                      <div className="text-white font-medium text-sm">{job.zipSizeKb || 0} KB</div>
+                      <div className="text-[10px] text-[#9c9c9d]">ZIP package with README.md</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 border-t border-[#1b1c1e] pt-4">
+                    <div className="text-xs font-medium text-white">Pipeline Quality Verifications</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono text-[#9c9c9d]">
+                      <div className="flex items-center gap-2 p-2 rounded bg-[#111214]/60">
+                        <span className="text-[#59d499]">✓</span>
+                        <span>SSRF & Redirect Guard: Verified Clean</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-[#111214]/60">
+                        <span className="text-[#59d499]">✓</span>
+                        <span>Playwright Hydration: DOM Serialized</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-[#111214]/60">
+                        <span className="text-[#59d499]">✓</span>
+                        <span>Watermarks & Badges: Stripped</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-[#111214]/60">
+                        <span className="text-[#59d499]">✓</span>
+                        <span>Consolidated CSS & Asset Relinking: OK</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -10,53 +10,89 @@ import dns from 'dns/promises';
  */
 
 function normalizeHostname(hostname: string): string {
-  let h = hostname.toLowerCase().replace(/\.$/, '');
+  let h = hostname.toLowerCase().replace(/\.$/, '').trim();
   // WHATWG URL keeps brackets on IPv6 literals ([::1]); strip them for checks.
   if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
   return h;
 }
 
-function isBlockedIpv4(ip: string): boolean {
-  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+export function isBlockedIpv4(ip: string): boolean {
+  const m = ip.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!m) return false;
   const a = parseInt(m[1], 10);
   const b = parseInt(m[2], 10);
   const c = parseInt(m[3], 10);
   const d = parseInt(m[4], 10);
-  if (a > 255 || b > 255 || c > 255 || d > 255) return true; // malformed
-  if (a === 0) return true; // 0.0.0.0/8
+
+  if (a > 255 || b > 255 || c > 255 || d > 255) return true; // malformed / out of range
+  if (a === 0) return true; // 0.0.0.0/8 (broadcast/this host)
   if (a === 10) return true; // 10.0.0.0/8 private
-  if (a === 127) return true; // loopback
-  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local / metadata
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT / shared address
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local / cloud metadata
   if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 private
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true; // 192.0.2.0/24 TEST-NET-1
+  if (a === 192 && b === 88 && c === 99) return true; // 192.88.99.0/24 6to4 relay anycast
   if (a === 192 && b === 168) return true; // 192.168.0.0/16 private
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
-  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 IETF protocol
-  if (a === 192 && b === 0 && c === 2) return true; // TEST-NET-1
-  if (a === 198 && b === 18) return true; // TEST-NET-2
-  if (a === 198 && b === 51 && c === 100) return true; // TEST-NET-3
-  if (a === 203 && b === 0 && c === 113) return true; // TEST-NET-4
-  if (a === 224) return true; // multicast
-  if (a >= 240) return true; // reserved
+  if (a === 198 && b >= 18 && b <= 19) return true; // 198.18.0.0/15 benchmarking
+  if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 TEST-NET-3
+  if (a >= 224 && a <= 239) return true; // 224.0.0.0/4 multicast
+  if (a >= 240) return true; // 240.0.0.0/4 reserved (including 255.255.255.255)
+  if (a === 100 && b === 100 && c === 100 && d === 200) return true; // Alibaba Cloud metadata
+
   return false;
 }
 
-function isBlockedIpv6(ip: string): boolean {
-  const v = ip.toLowerCase();
+export function isBlockedIpv6(ip: string): boolean {
+  const v = ip.toLowerCase().trim();
   // Loopback ::1, unspecified ::
   if (v === '::1' || v === '::' || v === '0:0:0:0:0:0:0:1' || v === '0:0:0:0:0:0:0:0') return true;
-  // IPv4-mapped IPv6 — run the embedded IPv4 through the v4 check
+
+  // IPv4-mapped IPv6 (::ffff:0:0/96 or ::ffff:127.0.0.1)
   if (v.startsWith('::ffff:')) {
     const embedded = v.split('::ffff:')[1];
     if (embedded && embedded.includes('.')) return isBlockedIpv4(embedded);
+    if (embedded && embedded.includes(':')) {
+      const parts = embedded.split(':');
+      if (parts.length === 2) {
+        const p1 = parseInt(parts[0], 16);
+        const p2 = parseInt(parts[1], 16);
+        const ip4 = `${(p1 >> 8) & 0xff}.${p1 & 0xff}.${(p2 >> 8) & 0xff}.${p2 & 0xff}`;
+        return isBlockedIpv4(ip4);
+      }
+    }
   }
+
+  // IPv4-translated (64:ff9b::/96)
+  if (v.startsWith('64:ff9b:')) {
+    const embedded = v.split('64:ff9b:')[1]?.replace(/^:/, '');
+    if (embedded && embedded.includes('.')) return isBlockedIpv4(embedded);
+  }
+
   // Link-local fe80::/10
-  if (v.startsWith('fe80:')) return true;
-  // ULA fc00::/7
+  if (v.startsWith('fe80:') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')) return true;
+
+  // ULA fc00::/7 (fc00:: through fdff::)
   if (v.startsWith('fc') || v.startsWith('fd')) return true;
+
   // Multicast ff00::/8
   if (v.startsWith('ff')) return true;
-  // 6to4 2002::/16 embeds IPv4 in bytes 2-5 — resolve via DNS path too
+
+  // Discard prefix 100::/64
+  if (v.startsWith('100:')) return true;
+
+  // Documentation 2001:db8::/32
+  if (v.startsWith('2001:db8:') || v.startsWith('2001:0db8:')) return true;
+
+  // ORCHID 2001:10::/28 or 2001:20::/28
+  if (v.startsWith('2001:10:') || v.startsWith('2001:20:') || v.startsWith('2001:001') || v.startsWith('2001:002')) return true;
+
+  // AWS IPv6 metadata (fd00:ec2::254)
+  if (v === 'fd00:ec2::254') return true;
+
+  // 6to4 2002::/16 embeds IPv4 in bytes 2-5
   if (v.startsWith('2002:')) {
     const parts = v.split(':');
     if (parts.length >= 3 && parts[1].length === 4) {
@@ -67,6 +103,7 @@ function isBlockedIpv6(ip: string): boolean {
       if (isBlockedIpv4(`${h1}.${h2}.${h3}.${h4}`)) return true;
     }
   }
+
   return false;
 }
 
@@ -111,25 +148,33 @@ export function validateUrlForSsrf(inputUrl: string): { valid: boolean; reason?:
 
   const hostname = normalizeHostname(parsed.hostname);
 
-  // Block localhost & loopback
+  // Block localhost & loopback domains
   if (
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
     hostname === '0.0.0.0' ||
     hostname === '::1' ||
+    hostname === '0' ||
     hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local')
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    hostname.endsWith('.lan') ||
+    hostname.endsWith('.home') ||
+    hostname.endsWith('.corp') ||
+    hostname.endsWith('.intranet')
   ) {
     return { valid: false, reason: 'Access to localhost and internal loopback addresses is forbidden' };
   }
 
-  // Block Cloud Instance Metadata Service (AWS, GCP, Azure)
+  // Block Cloud Instance Metadata Service (AWS, GCP, Azure, Alibaba, OpenStack)
   if (
     hostname === '169.254.169.254' ||
     hostname === '169.254.169.253' ||
+    hostname === '100.100.100.200' ||
     hostname === 'metadata.google.internal' ||
     hostname === 'metadata' ||
-    hostname === 'instance-data'
+    hostname === 'instance-data' ||
+    hostname === 'fd00:ec2::254'
   ) {
     return { valid: false, reason: 'Access to cloud instance metadata services is strictly forbidden' };
   }
@@ -152,9 +197,9 @@ export function validateUrlForSsrf(inputUrl: string): { valid: boolean; reason?:
 }
 
 /**
- * Async validation: runs the lexical checks AND resolves the hostname via DNS,
- * rejecting any target that resolves to a blocked address. Use before any
- * server-side fetch (asset downloads, proxy requests).
+ * Async validation: runs lexical checks AND resolves the hostname via DNS,
+ * rejecting any target that resolves to a blocked or internal address.
+ * Use before any server-side fetch (crawling, asset downloads, proxy requests).
  */
 export async function validateUrlForSsrfAsync(inputUrl: string): Promise<{ valid: boolean; reason?: string; url?: string }> {
   const lexical = validateUrlForSsrf(inputUrl);

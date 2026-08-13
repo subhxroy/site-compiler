@@ -10,6 +10,7 @@ import fs from 'fs';
 import { createJob, getJob, toPublicJob, cancelExportJob, updateJob, getJobByIdempotencyKey } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrf } from '../lib/security/ssrf';
+import { adminAuth, isFirebaseAdminConfigured } from '../lib/firebase/admin';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -47,8 +48,8 @@ function isAllowedOrigin(origin: string | undefined, callback: (err: Error | nul
       callback(null, true);
       return;
     }
-    // Allow Netlify production domains
-    if (u.hostname.endsWith('.netlify.app')) {
+    // Allow Netlify production domains and custom domain sitecompiler.app
+    if (u.hostname === 'sitecompiler.app' || u.hostname === 'www.sitecompiler.app' || u.hostname.endsWith('.netlify.app')) {
       callback(null, true);
       return;
     }
@@ -176,20 +177,23 @@ app.get('/api/job/:id/download', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization || req.headers.Authorization;
     if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7).trim();
-      try {
-        const decoded = await adminAuth.verifyIdToken(token);
-        if (decoded && decoded.email) {
-          const e = decoded.email.toLowerCase().trim();
-          const allowlist = (process.env.ADMIN_EMAILS || 'contact.subhroy-1@gmail.com,subhroy,whysaurjya')
-            .split(',')
-            .map((x) => x.trim().toLowerCase())
-            .filter(Boolean);
-          if (allowlist.some((a) => e.includes(a))) {
-            isVerifiedAdminToken = true;
+      if (isFirebaseAdminConfigured && adminAuth) {
+        try {
+          const decoded = await adminAuth.verifyIdToken(token);
+          if (decoded && decoded.email) {
+            const e = decoded.email.toLowerCase().trim();
+            const defaultAdminEmails = ['contact.subhroy-1@gmail.com', 'contact.subhroy@gmail.com', 'subhxroy@gmail.com'];
+            const allowlist = (process.env.ADMIN_EMAILS || defaultAdminEmails.join(','))
+              .split(',')
+              .map((x) => x.trim().toLowerCase())
+              .filter(Boolean);
+            if (allowlist.includes(e)) {
+              isVerifiedAdminToken = true;
+            }
           }
+        } catch (tokenErr) {
+          console.warn('[Download API] Admin ID token verification warning:', tokenErr);
         }
-      } catch (tokenErr) {
-        console.warn('[Download API] Admin ID token verification warning:', tokenErr);
       }
     }
 
@@ -199,7 +203,13 @@ app.get('/api/job/:id/download', async (req: Request, res: Response) => {
     }
   }
 
-  const exportDir = path.join(process.cwd(), 'exports', id);
+  const exportsRoot = path.resolve(process.cwd(), 'exports');
+  const exportDir = path.resolve(exportsRoot, id);
+  if (!exportDir.startsWith(exportsRoot)) {
+    res.status(400).json({ error: 'Invalid path access' });
+    return;
+  }
+
   const zipPath1 = path.join(exportDir, `${id}.zip`);
   const zipPath2 = path.join(exportDir, `download.zip`);
   const zipPath = fs.existsSync(zipPath1) ? zipPath1 : fs.existsSync(zipPath2) ? zipPath2 : null;

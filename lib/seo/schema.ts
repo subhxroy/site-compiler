@@ -84,15 +84,10 @@ export function softwareApplicationSchema() {
     offers: [
       {
         '@type': 'Offer',
-        name: 'Hobby Tier',
-        price: '0',
-        priceCurrency: 'USD',
-      },
-      {
-        '@type': 'Offer',
-        name: 'Pro Tier',
-        price: '29',
-        priceCurrency: 'USD',
+        name: 'Export Tier',
+        price: '20',
+        priceCurrency: 'INR',
+        description: '₹20 per 10 pages with complete asset bundle and clean source code.',
       },
     ],
   };
@@ -226,8 +221,8 @@ export function productSchema() {
     },
     offers: {
       '@type': 'Offer',
-      price: '29.00',
-      priceCurrency: 'USD',
+      price: '20.00',
+      priceCurrency: 'INR',
       priceValidUntil: '2027-12-31',
       itemCondition: 'https://schema.org/NewCondition',
       availability: 'https://schema.org/InStock',

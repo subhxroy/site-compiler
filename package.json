@@ -11,7 +11,8 @@
     "start:backend": "npx tsx server/index.ts",
     "start:frontend": "next start",
     "keep-alive": "node scripts/keep-alive.js",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx tests/run-all.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

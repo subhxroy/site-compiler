@@ -20,9 +20,15 @@ export async function GET(req: Request) {
     const usersSnapshot = await adminDb.collection('users').get();
     const totalUsers = usersSnapshot.size;
 
-    // Total exports saved across users
-    const exportsSnapshot = await adminDb.collection('user_exports').get();
-    const totalExports = exportsSnapshot.size;
+    // Total exports saved across users (collection group query with fallback to approvals)
+    let totalExports = 0;
+    try {
+      const exportsGroupSnapshot = await adminDb.collectionGroup('exports').get();
+      totalExports = exportsGroupSnapshot.size;
+    } catch {
+      const approvalsSnapshot = await adminDb.collection('export_approvals').get();
+      totalExports = approvalsSnapshot.size;
+    }
 
     // Server health status check
     let backendStatus = 'offline';

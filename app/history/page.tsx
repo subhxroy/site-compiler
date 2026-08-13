@@ -18,10 +18,11 @@ function formatDateTime(val?: string | number | null): string {
 }
 
 export default function ExportHistoryPage() {
-  const { user, loading, getUserExports } = useAuth();
+  const { user, loading, getUserExports, getIdToken } = useAuth();
   const [exports, setExports] = useState<UserExportRecord[]>([]);
   const [fetching, setFetching] = useState(true);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -34,6 +35,44 @@ export default function ExportHistoryPage() {
       setFetching(false);
     }
   }, [user, getUserExports]);
+
+  const handleDownload = async (jobId: string) => {
+    setDownloadingJobId(jobId);
+    try {
+      const token = await getIdToken();
+      const downloadUrl = getApiUrl(`/api/job/${jobId}/download`);
+      const res = await fetch(downloadUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        let msg = 'Download not available yet (awaiting payment approval or job expired)';
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch {}
+        alert(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${jobId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      const fallbackUrl = getApiUrl(`/api/job/${jobId}/download`);
+      const link = document.createElement('a');
+      link.href = fallbackUrl;
+      link.download = `${jobId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      setDownloadingJobId(null);
+    }
+  };
 
   return (
     <main className="pt-28 pb-24">
@@ -113,12 +152,13 @@ export default function ExportHistoryPage() {
                   {rec.zipSizeKb && (
                     <span className="font-mono text-xs text-[#9c9c9d]">{rec.zipSizeKb} KB</span>
                   )}
-                  <a
-                    href={getApiUrl(`/api/job/${rec.jobId}/download`)}
-                    className="raycast-button-primary px-4 py-2 text-xs flex items-center gap-1.5"
+                  <button
+                    onClick={() => handleDownload(rec.jobId)}
+                    disabled={downloadingJobId === rec.jobId}
+                    className="raycast-button-primary px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <span>Download ZIP</span>
-                  </a>
+                    <span>{downloadingJobId === rec.jobId ? 'Preparing...' : 'Download ZIP'}</span>
+                  </button>
                 </div>
               </div>
             ))}

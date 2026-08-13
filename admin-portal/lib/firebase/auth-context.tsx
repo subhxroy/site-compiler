@@ -30,21 +30,17 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(auth));
 
   useEffect(() => {
+    if (!auth) return;
+
     // Safety fallback timer to prevent infinite loading spinner if Firebase auth hangs
     const timer = setTimeout(() => {
       setLoading(false);
     }, 2500);
 
     let unsubscribe = () => {};
-
-    if (!auth) {
-      setLoading(false);
-      clearTimeout(timer);
-      return;
-    }
 
     try {
       unsubscribe = onAuthStateChanged(
@@ -62,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
     } catch {
       clearTimeout(timer);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
     }
 

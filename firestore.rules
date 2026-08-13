@@ -1,19 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users to read and write their own user profile document
+    // User profile documents: owner can read; writes cannot modify security roles
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
       
-      // Allow users to read and write their own export records subcollection
+      allow create: if request.auth != null && request.auth.uid == userId
+        && (!('role' in request.resource.data) || request.resource.data.role == 'user')
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
+        && (!('canExport' in request.resource.data) || request.resource.data.canExport == true);
+
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.isAdmin == resource.data.isAdmin
+        && request.resource.data.canExport == resource.data.canExport;
+
+      allow delete: if false;
+      
+      // User export history subcollection: owner read/write only
       match /exports/{exportId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
-    // Allow authenticated users to write export records to global exports collection
+    // Top-level export records & approvals: server admin SDK only (clients cannot manipulate)
     match /exports/{exportId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
+    }
+    
+    match /export_approvals/{jobId} {
+      allow read, write: if false;
     }
   }
 }

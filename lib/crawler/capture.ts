@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as zlib from 'zlib';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
-import { validateUrlForSsrfAsync } from '../security/ssrf';
+import { validateUrlForSsrf, validateUrlForSsrfAsync } from '../security/ssrf';
 import { stripPlatformWatermarks } from '../parser/dom-cleaner';
 import { sanitizeCssText } from '../parser/css-parser';
 import { stripAnsi } from '../jobs/store';
@@ -272,6 +272,36 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     });
 
     page = await context.newPage();
+
+    // ── Anti-SSRF Route Interception (blocks redirects, localhost, cloud metadata, private IPs) ──
+    await context.route('**/*', async (route) => {
+      try {
+        const req = route.request();
+        const reqUrl = req.url();
+
+        // Allow standard browser pseudo-schemes
+        if (reqUrl.startsWith('data:') || reqUrl.startsWith('blob:') || reqUrl.startsWith('about:')) {
+          return route.continue();
+        }
+
+        const lexical = validateUrlForSsrf(reqUrl);
+        if (!lexical.valid) {
+          return route.abort('blockedbyclient');
+        }
+
+        if (req.isNavigationRequest()) {
+          const asyncCheck = await validateUrlForSsrfAsync(reqUrl);
+          if (!asyncCheck.valid) {
+            return route.abort('blockedbyclient');
+          }
+        }
+
+        return route.continue();
+      } catch {
+        return route.abort('blockedbyclient');
+      }
+    });
+
     page.on('response', (resp: Response) => {
       const reqUrl = resp.url();
       const ct = resp.headers()['content-type'] || '';
@@ -355,6 +385,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       }
 
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
+
+      // Subpage SSRF validation
+      const ssrfSubpage = await validateUrlForSsrfAsync(currentUrl);
+      if (!ssrfSubpage.valid) {
+        log(`[SSRF Guard] Skipping blocked subpage URL: ${currentUrl} (${ssrfSubpage.reason || 'Blocked IP/host'})`);
+        continue;
+      }
+
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
       const gotoTimeout = isEntry ? 15000 : 8000;
@@ -567,8 +605,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
         for (const rawLink of internalLinks) {
           const link = normalizeUrl(rawLink);
+          const linkCheck = validateUrlForSsrf(link);
           const isExternalDomainInPath = /\/(www\.|linkedin\.com|twitter\.com|facebook\.com|instagram\.com|github\.com|youtube\.com)/i.test(link);
-          if (!visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
+          if (linkCheck.valid && !visitedUrls.has(link) && !pagesToCrawl.includes(link) && !isExternalDomainInPath) {
             // Only crawl pages — never binary/media/data files. Anything whose
             // path ends in a non-HTML extension (images, fonts, video, archives,
             // config, manifests, icons, maps) is an asset, not a page. Query
@@ -822,7 +861,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         ...cssAssetUrls,
         ...networkAssetUrls,
       ]),
-    ].filter((u) => u.startsWith('http://') || u.startsWith('https://'));
+    ]
+      .filter((u) => u.startsWith('http://') || u.startsWith('https://'))
+      .slice(0, 300); // Resource limit: cap at 300 assets
 
     log(`Downloading ${mergedAssetUrls.length} total assets...`);
 
@@ -841,6 +882,13 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         const res = await context.request.get(assetUrl, { timeout: 6000 });
         if (!res.ok()) continue;
 
+        const body = await res.body();
+        // Limit individual asset size to 35MB to prevent memory/disk exhaustion
+        if (body.length > 35 * 1024 * 1024) {
+          log(`[Resource Limit] Skipped oversized asset (${(body.length / 1024 / 1024).toFixed(1)} MB): ${assetUrl}`);
+          continue;
+        }
+
         const ct = res.headers()['content-type'] || '';
         const category = getAssetCategory(assetUrl, ct);
         const ext = guessExtension(assetUrl, ct);
@@ -855,7 +903,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         const localPath = path.join(/* turbopackIgnore: true */ catDir, filename);
         const relPath   = path.relative(rawDir, localPath).replace(/\\/g, '/');
 
-        fs.writeFileSync(localPath, await res.body());
+        fs.writeFileSync(localPath, body);
         assetManifest.push({ originalUrl: assetUrl, category, localPath: relPath, filename });
       } catch {}
     }

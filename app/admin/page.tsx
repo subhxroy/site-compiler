@@ -6,7 +6,6 @@ import {
   Users, 
   ShieldAlert, 
   Server, 
-  CheckCircle2, 
   RefreshCw, 
   Search, 
   Zap, 
@@ -17,7 +16,11 @@ import {
   Lock,
   LogOut,
   Mail,
-  Key
+  Key,
+  FileCheck,
+  XCircle,
+  Clock,
+  CheckCircle
 } from 'lucide-react';
 import { useAuth } from '@/lib/firebase/auth-context';
 
@@ -31,6 +34,20 @@ interface AdminUser {
   status: 'active' | 'suspended';
   createdAt: string;
   lastLoginAt: string;
+}
+
+interface ExportApproval {
+  id: string;
+  jobId: string;
+  url: string;
+  pageCount: number;
+  amount: number;
+  senderAccount: string;
+  utrNumber: string;
+  userEmail: string;
+  status: 'pending' | 'approved' | 'rejected';
+  paymentApproved?: boolean;
+  submittedAt: string;
 }
 
 interface SystemStats {
@@ -57,11 +74,15 @@ export default function AdminPortalPage() {
   const { user, loading: authLoading, signInWithGoogle, signInWithEmail, signOutUser, getIdToken } = useAuth();
   
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [approvals, setApprovals] = useState<ExportApproval[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [isVerifiedAdmin, setIsVerifiedAdmin] = useState<boolean | null>(null);
   const [search, setSearch] = useState('');
+  const [approvalSearch, setApprovalSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'approvals' | 'users'>('approvals');
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
+  const [processingJobId, setProcessingJobId] = useState<string | null>(null);
   const [pingingBackend, setPingingBackend] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -71,7 +92,7 @@ export default function AdminPortalPage() {
   const [authError, setAuthError] = useState('');
   const [authenticating, setAuthenticating] = useState(false);
 
-  // Fetch admin users & system stats with Bearer token authentication
+  // Fetch admin users, approvals & system stats with Bearer token authentication
   const loadAdminData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
@@ -85,9 +106,10 @@ export default function AdminPortalPage() {
 
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      const [usersRes, statsRes] = await Promise.all([
+      const [usersRes, statsRes, approvalsRes] = await Promise.all([
         fetch('/api/admin/users', { headers }),
         fetch('/api/admin/stats', { headers }),
+        fetch('/api/admin/approvals', { headers }).catch(() => null),
       ]);
 
       if (usersRes.status === 401 || usersRes.status === 403) {
@@ -99,9 +121,11 @@ export default function AdminPortalPage() {
 
       const usersData = await usersRes.json();
       const statsData = statsRes.ok ? await statsRes.json() : null;
+      const approvalsData = approvalsRes && approvalsRes.ok ? await approvalsRes.json() : null;
 
       if (usersData.users) setUsers(usersData.users);
       if (statsData) setStats(statsData);
+      if (approvalsData && approvalsData.approvals) setApprovals(approvalsData.approvals);
       setIsVerifiedAdmin(true);
     } catch (err: unknown) {
       setIsVerifiedAdmin(false);
@@ -206,6 +230,40 @@ export default function AdminPortalPage() {
       setFeedback({ type: 'error', message: (err as Error).message || 'Error updating user role' });
     } finally {
       setUpdatingUid(null);
+    }
+  };
+
+  // Approve or Reject Export Payment
+  const handleProcessApproval = async (jobId: string, action: 'approve' | 'reject') => {
+    setProcessingJobId(jobId);
+    try {
+      const token = await getIdToken();
+      const res = await fetch('/api/admin/approvals', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ jobId, action }),
+      });
+
+      if (res.ok) {
+        const isApproved = action === 'approve';
+        setApprovals((prev) =>
+          prev.map((item) => (item.jobId === jobId ? { ...item, status: isApproved ? 'approved' : 'rejected', paymentApproved: isApproved } : item))
+        );
+        setFeedback({
+          type: 'success',
+          message: `Export package ${jobId} set to ${isApproved ? 'APPROVED — Download unlocked' : 'REJECTED'}.`,
+        });
+      } else {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to process approval');
+      }
+    } catch (err: unknown) {
+      setFeedback({ type: 'error', message: (err as Error).message || 'Error processing export approval' });
+    } finally {
+      setProcessingJobId(null);
     }
   };
 
@@ -384,6 +442,16 @@ export default function AdminPortalPage() {
       u.uid.toLowerCase().includes(search.toLowerCase())
   );
 
+  const filteredApprovals = approvals.filter(
+    (a) =>
+      a.jobId.toLowerCase().includes(approvalSearch.toLowerCase()) ||
+      a.url.toLowerCase().includes(approvalSearch.toLowerCase()) ||
+      (a.userEmail && a.userEmail.toLowerCase().includes(approvalSearch.toLowerCase())) ||
+      (a.utrNumber && a.utrNumber.toLowerCase().includes(approvalSearch.toLowerCase()))
+  );
+
+  const pendingApprovalsCount = approvals.filter((a) => a.status === 'pending').length;
+
   // ── Render State 4: Verified Admin Console ────────────────────────────────
   return (
     <main className="pt-28 pb-24 text-white min-h-screen">
@@ -398,7 +466,7 @@ export default function AdminPortalPage() {
             </div>
             <h1 className="text-3xl font-semibold text-white tracking-tight">Platform Administration</h1>
             <p className="text-xs text-[#9c9c9d]">
-              Connected as <span className="text-white font-mono">{user.email}</span>.
+              Connected as <span className="text-white font-mono">{user.email}</span>
             </p>
           </div>
 
@@ -457,13 +525,13 @@ export default function AdminPortalPage() {
 
           <div className="raycast-key-card p-5 border border-[#2f3031] space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-[#9c9c9d]">
-              <span>Export Access Granted</span>
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Pending Approvals</span>
+              <FileCheck className="w-4 h-4 text-amber-400" />
             </div>
             <div className="text-2xl font-bold text-white">
-              {users.filter((u) => u.canExport).length} / {users.length}
+              {pendingApprovalsCount} / {approvals.length}
             </div>
-            <p className="text-[11px] text-[#6a6b6c] font-mono">Users enabled to compile</p>
+            <p className="text-[11px] text-[#6a6b6c] font-mono">Awaiting UTR verification</p>
           </div>
 
           <div className="raycast-key-card p-5 border border-[#2f3031] space-y-2">
@@ -471,7 +539,7 @@ export default function AdminPortalPage() {
               <span>Total Compilations</span>
               <Database className="w-4 h-4 text-[#ff6363]" />
             </div>
-            <div className="text-2xl font-bold text-white">{stats?.totalExports || 0}</div>
+            <div className="text-2xl font-bold text-white">{stats?.totalExports || approvals.length || 0}</div>
             <p className="text-[11px] text-[#6a6b6c] font-mono">Saved export packages</p>
           </div>
 
@@ -495,118 +563,264 @@ export default function AdminPortalPage() {
           </div>
         </div>
 
-        {/* User Access Control Section */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2f3031] pb-3">
-            <div>
-              <h2 className="text-xl font-semibold text-white tracking-tight">User Access & Export Permissions</h2>
-              <p className="text-xs text-[#9c9c9d]">Control who can export websites and manage user roles.</p>
+        {/* Tab Switcher */}
+        <div className="flex items-center gap-3 border-b border-[#2f3031] pb-3">
+          <button
+            onClick={() => setActiveTab('approvals')}
+            className={`px-4 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'approvals'
+                ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                : 'text-[#6a6b6c] hover:text-white'
+            }`}
+          >
+            <FileCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span>Export Payment Approvals</span>
+            {pendingApprovalsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+                {pendingApprovalsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-4 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'users'
+                ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                : 'text-[#6a6b6c] hover:text-white'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-[#ff6363]" />
+            <span>User Access & Roles</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-[#1b1c1e] text-[#9c9c9d] text-[10px]">
+              {users.length}
+            </span>
+          </button>
+        </div>
+
+        {/* TAB 1: EXPORT PAYMENT APPROVALS */}
+        {activeTab === 'approvals' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2f3031] pb-3">
+              <div>
+                <h2 className="text-xl font-semibold text-white tracking-tight">Export Payment Approvals</h2>
+                <p className="text-xs text-[#9c9c9d]">Verify UTR numbers and unlock completed export package downloads.</p>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#6a6b6c]" />
+                <input
+                  type="text"
+                  placeholder="Search UTR, job ID, email..."
+                  value={approvalSearch}
+                  onChange={(e) => setApprovalSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 raycast-inset-input text-xs text-white outline-none rounded-lg"
+                />
+              </div>
             </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#6a6b6c]" />
-              <input
-                type="text"
-                placeholder="Search user or email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 raycast-inset-input text-xs text-white outline-none rounded-lg"
-              />
-            </div>
-          </div>
-
-          {/* User Table */}
-          <div className="raycast-key-card border border-[#2f3031] rounded-2xl overflow-x-auto bg-[#07080a]">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#111214] text-[#6a6b6c] uppercase font-mono text-[10px] border-b border-[#2f3031]">
-                <tr>
-                  <th className="px-6 py-3.5">User</th>
-                  <th className="px-6 py-3.5">Role</th>
-                  <th className="px-6 py-3.5">Export Access</th>
-                  <th className="px-6 py-3.5">Joined</th>
-                  <th className="px-6 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1f2023] text-[#a0a0a2]">
-                {filteredUsers.length === 0 ? (
+            <div className="raycast-key-card border border-[#2f3031] rounded-2xl overflow-x-auto bg-[#07080a]">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#111214] text-[#6a6b6c] uppercase font-mono text-[10px] border-b border-[#2f3031]">
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-[#6a6b6c] font-mono">
-                      {loading ? 'Loading user database...' : 'No users found in Firestore database.'}
-                    </td>
+                    <th className="px-6 py-3.5">Target Site & Job ID</th>
+                    <th className="px-6 py-3.5">Pages & Amount</th>
+                    <th className="px-6 py-3.5">Payer Account / UTR</th>
+                    <th className="px-6 py-3.5">User Email</th>
+                    <th className="px-6 py-3.5">Status</th>
+                    <th className="px-6 py-3.5 text-right">Actions</th>
                   </tr>
-                ) : (
-                  filteredUsers.map((u) => (
-                    <tr key={u.uid} className="hover:bg-[#111214]/60 transition-colors">
-                      {/* User Info */}
-                      <td className="px-6 py-4 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#1b1c1e] border border-[#2f3031] flex items-center justify-center font-bold text-white text-xs flex-none">
-                          {(u.displayName || u.email || 'U').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-white font-medium">{u.displayName || 'User'}</div>
-                          <div className="text-[11px] font-mono text-[#6a6b6c]">{u.email}</div>
-                        </div>
-                      </td>
-
-                      {/* Role Selector */}
-                      <td className="px-6 py-4">
-                        <select
-                          value={u.role}
-                          onChange={(e) => handleRoleChange(u.uid, e.target.value as 'user' | 'pro' | 'admin')}
-                          disabled={updatingUid === u.uid}
-                          className="bg-[#1b1c1e] border border-[#2f3031] text-xs text-white rounded px-2.5 py-1 font-mono outline-none cursor-pointer"
-                        >
-                          <option value="user">User</option>
-                          <option value="pro">Pro Member</option>
-                          <option value="admin">Administrator</option>
-                        </select>
-                      </td>
-
-                      {/* Export Status Badge */}
-                      <td className="px-6 py-4">
-                        {u.canExport ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-medium">
-                            <Check className="w-3 h-3" />
-                            <span>Export Allowed</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-mono font-medium">
-                            <Ban className="w-3 h-3" />
-                            <span>Export Disabled</span>
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Joined Date */}
-                      <td className="px-6 py-4 font-mono text-[11px] text-[#6a6b6c]">
-                        {formatDateTime(u.createdAt)}
-                      </td>
-
-                      {/* Toggle Permission Button */}
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleToggleExport(u)}
-                          disabled={updatingUid === u.uid}
-                          className={`px-3 py-1.5 rounded-md font-mono text-[11px] transition-all cursor-pointer disabled:opacity-50 ${
-                            u.canExport
-                              ? 'bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400'
-                              : 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400'
-                          }`}
-                        >
-                          {updatingUid === u.uid
-                            ? 'Saving...'
-                            : u.canExport
-                            ? 'Disable Export'
-                            : 'Enable Export'}
-                        </button>
+                </thead>
+                <tbody className="divide-y divide-[#1f2023] text-[#a0a0a2]">
+                  {filteredApprovals.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-[#6a6b6c] font-mono">
+                        {loading ? 'Loading export approvals...' : 'No payment verification requests found.'}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredApprovals.map((item) => (
+                      <tr key={item.id || item.jobId} className="hover:bg-[#111214]/60 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="text-white font-medium truncate max-w-[200px]" title={item.url}>
+                            {item.url || 'Target Site'}
+                          </div>
+                          <div className="text-[11px] font-mono text-[#6a6b6c]">
+                            Job: {item.jobId}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono">
+                          <div className="text-white font-semibold">₹{item.amount || 20}</div>
+                          <div className="text-[11px] text-[#6a6b6c]">{item.pageCount || 1} page(s)</div>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono">
+                          <div className="text-emerald-400 font-medium">UTR: {item.utrNumber || 'N/A'}</div>
+                          <div className="text-[11px] text-[#6a6b6c]">{item.senderAccount || 'UPI Account'}</div>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono text-[11px] text-[#6a6b6c]">
+                          {item.userEmail || 'Anonymous'}
+                          <div className="text-[10px] text-[#4a4b4c]">{formatDateTime(item.submittedAt)}</div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          {item.status === 'approved' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-medium">
+                              <CheckCircle className="w-3 h-3" />
+                              <span>Approved</span>
+                            </span>
+                          ) : item.status === 'rejected' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-mono font-medium">
+                              <XCircle className="w-3 h-3" />
+                              <span>Rejected</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-mono font-medium">
+                              <Clock className="w-3 h-3" />
+                              <span>Pending Review</span>
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleProcessApproval(item.jobId, 'approve')}
+                              disabled={processingJobId === item.jobId || item.status === 'approved'}
+                              className="px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 font-mono text-[11px] transition-all cursor-pointer disabled:opacity-40"
+                              title="Approve and unlock download"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleProcessApproval(item.jobId, 'reject')}
+                              disabled={processingJobId === item.jobId || item.status === 'rejected'}
+                              className="px-2.5 py-1 rounded-md bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 font-mono text-[11px] transition-all cursor-pointer disabled:opacity-40"
+                              title="Reject payment"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* TAB 2: USER ACCESS & ROLES */}
+        {activeTab === 'users' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2f3031] pb-3">
+              <div>
+                <h2 className="text-xl font-semibold text-white tracking-tight">User Access & Export Permissions</h2>
+                <p className="text-xs text-[#9c9c9d]">Control who can export websites and manage user roles.</p>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#6a6b6c]" />
+                <input
+                  type="text"
+                  placeholder="Search user or email..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 raycast-inset-input text-xs text-white outline-none rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="raycast-key-card border border-[#2f3031] rounded-2xl overflow-x-auto bg-[#07080a]">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#111214] text-[#6a6b6c] uppercase font-mono text-[10px] border-b border-[#2f3031]">
+                  <tr>
+                    <th className="px-6 py-3.5">User</th>
+                    <th className="px-6 py-3.5">Role</th>
+                    <th className="px-6 py-3.5">Export Access</th>
+                    <th className="px-6 py-3.5">Joined</th>
+                    <th className="px-6 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1f2023] text-[#a0a0a2]">
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-[#6a6b6c] font-mono">
+                        {loading ? 'Loading user database...' : 'No users found in Firestore database.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUsers.map((u) => (
+                      <tr key={u.uid} className="hover:bg-[#111214]/60 transition-colors">
+                        <td className="px-6 py-4 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#1b1c1e] border border-[#2f3031] flex items-center justify-center font-bold text-white text-xs flex-none">
+                            {(u.displayName || u.email || 'U').charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-white font-medium">{u.displayName || 'User'}</div>
+                            <div className="text-[11px] font-mono text-[#6a6b6c]">{u.email}</div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <select
+                            value={u.role}
+                            onChange={(e) => handleRoleChange(u.uid, e.target.value as 'user' | 'pro' | 'admin')}
+                            disabled={updatingUid === u.uid}
+                            className="bg-[#1b1c1e] border border-[#2f3031] text-xs text-white rounded px-2.5 py-1 font-mono outline-none cursor-pointer"
+                          >
+                            <option value="user">User</option>
+                            <option value="pro">Pro Member</option>
+                            <option value="admin">Administrator</option>
+                          </select>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          {u.canExport ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-mono font-medium">
+                              <Check className="w-3 h-3" />
+                              <span>Export Allowed</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-mono font-medium">
+                              <Ban className="w-3 h-3" />
+                              <span>Export Disabled</span>
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 font-mono text-[11px] text-[#6a6b6c]">
+                          {formatDateTime(u.createdAt)}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => handleToggleExport(u)}
+                            disabled={updatingUid === u.uid}
+                            className={`px-3 py-1.5 rounded-md font-mono text-[11px] transition-all cursor-pointer disabled:opacity-50 ${
+                              u.canExport
+                                ? 'bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400'
+                                : 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400'
+                            }`}
+                          >
+                            {updatingUid === u.uid
+                              ? 'Saving...'
+                              : u.canExport
+                              ? 'Disable Export'
+                              : 'Enable Export'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
       </div>
     </main>

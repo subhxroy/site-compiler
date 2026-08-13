@@ -11,11 +11,6 @@ export interface CleanDomResult {
 // ── Source-platform watermark stripping ───────────────────────────────────────
 // Exported sites often carry a small "Made in Framer" / "Powered by Webflow" /
 // Wix.com badge from the platform template. This pass removes those so the
-// exported code doesn't advertise the tool it was exported from.
-const WATERMARK_RE =
-  /^(made|created|built|designed|crafted|proudly powered|powered|runs on|hosted by)\s+(in|with|by)\s+(framer|webflow|wix|wix\.com|wordpress|squarespace|godaddy|weebly|strikingly|carrd|tilda|readymag)\b.*$/i;
-const BARE_POWERED_RE = /^(proudly powered by|powered by)\s+(wordpress|framer|webflow|wix)\b.*$/i;
-
 export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
   // 1. Comprehensive selector list for platform badges, overlays, and ads
   const PLATFORM_WATERMARK_SELECTORS = [
@@ -31,6 +26,7 @@ export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
     'a[href*="framer.link"]',
     'a[href*="framer.site"]',
     'a[href*="framer.website"]',
+    'div[data-framer-generated="true"] a[href*="framer"]',
 
     // Webflow badges & ads
     '.w-webflow-badge',
@@ -38,6 +34,7 @@ export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
     'a[href*="webflow.com"][target="_blank"]',
     'img[src*="webflow-badge"]',
     '[data-wf-site] + div a[href*="webflow.com"]',
+    '[data-wf-badge]',
 
     // Wix badges & ads
     '.wix-badge',
@@ -47,13 +44,43 @@ export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
     '[class*="wix-badge"]',
     'iframe[src*="wix.com"]',
     '#wix-ads-container',
+    'div[data-testid="wix-ads-root"]',
+    'div[data-testid="wix-ads-container"]',
 
     // WordPress / Squarespace / Shopify / Carrd / Weebly
     '#wpadminbar',
+    '.admin-bar',
     'a[href*="carrd.co"]',
+    '#carrd-badge',
+    '[class*="carrd-badge"]',
+    '#squarespace-badge',
+    '[class*="squarespace-badge"]',
     'a[href*="squarespace.com"]',
     'a[href*="wordpress.org"]',
+    'p.powered-by-wordpress',
     'a[href*="shopify.com/free-trial"]',
+    'a[href*="shopify.com/?ref="]',
+
+    // Tilda, Readymag, Dorik, Typedream, Vev, Site123, Zyro
+    '.t-tildalabel',
+    '[class*="t-tildalabel"]',
+    'a[href*="tilda.cc"]',
+    '[class*="readymag-badge"]',
+    'a[href*="readymag.com"]',
+    '.dorik-badge',
+    'a[href*="dorik.com"]',
+    '.typedream-badge',
+    'a[href*="typedream.com"]',
+    '[class*="vev-badge"]',
+    'a[href*="vev.design"]',
+    '[class*="site123-badge"]',
+    'a[href*="site123.com"]',
+    '[class*="zyro-badge"]',
+    'a[href*="zyro.com"]',
+    '[class*="weebly-footer"]',
+    'a[href*="weebly.com"]',
+    '[class*="strikingly-badge"]',
+    'a[href*="strikingly.com"]',
   ].join(', ');
 
   $(PLATFORM_WATERMARK_SELECTORS).remove();
@@ -93,8 +120,11 @@ export function stripPlatformWatermarksFromDom($: cheerio.CheerioAPI): void {
 
     if (isWatermark) {
       const parent = $(el).parent();
-      // If the parent is a small wrapper around this badge link, remove the parent container
-      if (parent.length && parent.text().trim().length < 80 && parent[0]?.tagName !== 'body' && parent[0]?.tagName !== 'html') {
+      const tag = parent[0]?.tagName?.toLowerCase() || '';
+      const isStructural = /^(main|section|article|header|footer|nav|aside|body|html|form|ul|ol|table|tbody|tr|td)$/i.test(tag);
+      const isPureWrapper = parent.children().length === 1 && !isStructural;
+      // If the parent is an isolated single-child wrapper around this badge, remove the wrapper
+      if (parent.length && isPureWrapper && parent.text().trim().length < 80) {
         parent.remove();
       } else {
         $(el).remove();

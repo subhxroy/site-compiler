@@ -10,7 +10,7 @@ export const metadata = buildMetadata({
 
 const data: ExportPageData = {
   title: 'Next.js 16 Export',
-  badge: 'NEXT.JS 15 ENGINE',
+  badge: 'NEXT.JS 16 ENGINE',
   headline: 'Export sites to Next.js 16 App Router & Tailwind CSS',
   description: 'Generate full Next.js 16 App Router codebases with TypeScript, Tailwind CSS configuration, and zero platform lock-in.',
   path: '/nextjs-export',

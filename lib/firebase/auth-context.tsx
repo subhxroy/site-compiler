@@ -9,7 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { auth, googleProvider, isFirebaseConfigured } from './config';
+import { auth, googleProvider } from './config';
 
 export interface UserExportRecord {
   id?: string;
@@ -50,35 +50,21 @@ const AuthContext = createContext<AuthContextType>({
   getIdToken: async () => null,
 });
 
-function checkIsAdminEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const e = email.toLowerCase().trim();
-  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || 'contact.subhroy-1@gmail.com,subhroy,whysaurjya')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return allowlist.some((a) => e.includes(a));
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(auth));
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState('user');
 
   useEffect(() => {
+    if (!auth) return;
+
     // Safety fallback timer to prevent infinite loading spinner if Firebase auth hangs
     const timer = setTimeout(() => {
       setLoading(false);
     }, 2500);
 
     let unsubscribe = () => {};
-
-    if (!auth) {
-      setLoading(false);
-      clearTimeout(timer);
-      return;
-    }
 
     try {
       unsubscribe = onAuthStateChanged(
@@ -89,13 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
 
           if (currentUser) {
-            const clientIsAdmin = checkIsAdminEmail(currentUser.email);
-            if (clientIsAdmin) {
-              setIsAdmin(true);
-              setUserRole('admin');
-            }
-
-            // Sync user profile to Next.js API route (/api/user/sync).
+            // Sync user profile to Next.js API route (/api/user/sync) where admin privileges are verified server-side.
             try {
               const idToken = await currentUser.getIdToken(true);
               const res = await fetch('/api/user/sync', {
@@ -111,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               });
               if (res.ok) {
                 const data = await res.json();
-                if (data.isAdmin || data.role === 'admin' || clientIsAdmin) {
+                if (data.isAdmin || data.role === 'admin') {
                   setIsAdmin(true);
                   setUserRole('admin');
                 } else {
