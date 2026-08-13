@@ -3,7 +3,7 @@ import { buildHtmlExport } from '../generator/html/build';
 import { detectSections } from '../detector/section-detector';
 import { buildNextJsExport } from '../generator/nextjs/page-assembler';
 import { createJobZip } from '../zip/build-zip';
-import { getJob, isJobActive, updateJob } from './store';
+import { getJob, isJobActive, updateJob, stripAnsi } from './store';
 import { validateHtmlOutput, validateNextOutput, validateZip } from './validate';
 import * as path from 'path';
 
@@ -192,7 +192,8 @@ export async function processExportJob(jobId: string): Promise<void> {
       console.log(`[job:${jobId}] Skipping failure handling — job was cancelled.`);
       return;
     }
-    const errMsg = (err as Error).message || String(err);
+    const rawErrMsg = (err as Error).message || String(err);
+    const errMsg = stripAnsi(rawErrMsg);
     console.error(`[job:${jobId}] FAILED phase=${currentPhase} error=${errMsg}`);
     updateJob(
       jobId,

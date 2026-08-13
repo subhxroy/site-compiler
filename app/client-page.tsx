@@ -62,6 +62,25 @@ function stepState(current: JobStatus, step: JobStatus): 'done' | 'active' | 'id
   return 'idle';
 }
 
+function stripAnsi(str: string): string {
+  if (!str) return '';
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').replace(/\[\d{1,2}m/g, '');
+}
+
+function formatLogLine(line: string): string {
+  if (!line) return '';
+  const clean = stripAnsi(line);
+  return clean.replace(/\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\]/g, (_, isoStr) => {
+    try {
+      const date = new Date(isoStr);
+      if (!isNaN(date.getTime())) {
+        return `[${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}]`;
+      }
+    } catch {}
+    return `[${isoStr}]`;
+  });
+}
+
 const Icon = {
   CoralDiamond: () => (
     <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
@@ -813,7 +832,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
               {tab === 'preview' ? (
                 <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] max-h-[550px] overflow-y-auto bg-[#040506] scrollbar-thin scrollbar-thumb-[#363739]">
-                  {job.screenshots ? (
+                  {job.id ? (
                     <div className="transition-all duration-300 ease-in-out">
                       <img
                         key={`${viewport}-${job.id}`}
@@ -846,7 +865,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                 <div className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5">
                   {job.logs.map((l, idx) => (
                     <div key={idx} className="leading-relaxed">
-                      {l}
+                      {formatLogLine(l)}
                     </div>
                   ))}
                   <div ref={logEndRef} />

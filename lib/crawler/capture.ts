@@ -1,16 +1,72 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as zlib from 'zlib';
 import { URL } from 'url';
 import { CaptureOptions, CaptureResult, ExtractedAsset, ExtractedMeta, PageCaptured } from './types';
 import { validateUrlForSsrfAsync } from '../security/ssrf';
 import { stripPlatformWatermarks } from '../parser/dom-cleaner';
 import { sanitizeCssText } from '../parser/css-parser';
+import { stripAnsi } from '../jobs/store';
 
 // Set browser path to ./pw-browsers (project-relative, survives Render build→runtime)
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function createPngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, 'ascii');
+  const bufToCrc = Buffer.concat([typeBuf, data]);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(bufToCrc), 0);
+  return Buffer.concat([len, typeBuf, data, crcBuf]);
+}
+
+export function createMinimalPngBuffer(width = 1200, height = 800): Buffer {
+  const rowSize = 1 + width * 3;
+  const rawData = Buffer.alloc(height * rowSize);
+  for (let y = 0; y < height; y++) {
+    const offset = y * rowSize;
+    rawData[offset] = 0;
+    for (let x = 0; x < width; x++) {
+      const pxOffset = offset + 1 + x * 3;
+      rawData[pxOffset] = 11;
+      rawData[pxOffset + 1] = 12;
+      rawData[pxOffset + 2] = 14;
+    }
+  }
+  const compressed = zlib.deflateSync(rawData);
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  return Buffer.concat([
+    sig,
+    createPngChunk('IHDR', ihdr),
+    createPngChunk('IDAT', compressed),
+    createPngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -127,8 +183,9 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const targetHost = entryUrlParsed.hostname;
 
   const log = (msg: string) => {
-    console.log(`[Job ${jobId}] ${msg}`);
-    if (onProgress) onProgress(msg);
+    const cleanMsg = stripAnsi(msg);
+    console.log(`[Job ${jobId}] ${cleanMsg}`);
+    if (onProgress) onProgress(cleanMsg);
   };
 
   log(`Starting full-site capture for: ${normalizedEntryUrl}`);
@@ -300,7 +357,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       const isEntry = currentUrl === normalizedEntryUrl || pageCount === 1;
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
-      const gotoTimeout = isEntry ? 20000 : 15000;
+      const gotoTimeout = isEntry ? 15000 : 8000;
 
       try {
         try {
@@ -308,7 +365,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         } catch {
           log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, checking DOM content fallback...`);
           try {
-            await page.goto(currentUrl, { waitUntil: 'load', timeout: 10000 });
+            await page.goto(currentUrl, { waitUntil: 'load', timeout: 5000 });
           } catch {}
         }
         
@@ -623,38 +680,67 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         if (isEntry) {
           log('Taking true responsive breakpoint screenshots of main page...');
 
-          // Resize the SAME loaded page through each breakpoint instead of
-          // opening fresh tabs: the DOM is already hydrated, media queries
-          // re-evaluate on the new width instantly, and fresh tabs on heavy
-          // SPAs (Framer) frequently failed to screenshot — which previously
-          // triggered a silent desktop-copy fallback that produced three
-          // byte-identical images.
+          // Inject CSS to freeze infinite animations & transitions so Playwright's compositor captures frame instantly
+          try {
+            await page.addStyleTag({
+              content: `
+                *, *::before, *::after {
+                  animation-duration: 0.001ms !important;
+                  animation-delay: 0s !important;
+                  animation-iteration-count: 1 !important;
+                  transition-duration: 0.001ms !important;
+                  transition-delay: 0s !important;
+                  scroll-behavior: auto !important;
+                }
+              `
+            }).catch(() => {});
+          } catch {}
+
           const takeBreakpointShot = async (label: 'desktop' | 'tablet' | 'mobile', width: number, height: number) => {
             const p1 = path.join(screensDir, `${label}.png`);
             const p2 = path.join(screensExportDir, `${label}.png`);
             try {
               await page.setViewportSize({ width, height });
-              await page.waitForTimeout(300);
+              await page.waitForTimeout(200);
 
-              // Flush font loading gracefully so Playwright doesn't stall waiting for fonts
+              // Quick font wait (max 300ms) so Playwright doesn't stall waiting for dynamic fonts
               try {
                 await page.evaluate(() => Promise.race([
                   document.fonts.ready,
-                  new Promise((r) => setTimeout(r, 1000)),
+                  new Promise((r) => setTimeout(r, 300)),
                 ]));
               } catch {}
 
-              await page.screenshot({ path: p1, fullPage: false, timeout: 10000 });
-              fs.copyFileSync(p1, p2);
-              log(`Screenshot OK (${label} ${width}x${height})`);
+              let tookScreenshot = false;
+              try {
+                await page.screenshot({ path: p1, fullPage: false, animations: 'disabled', scale: 'css', timeout: 6000 });
+                tookScreenshot = true;
+              } catch (shotErr) {
+                // Secondary fallback attempt using body locator screenshot
+                try {
+                  await page.locator('body').screenshot({ path: p1, animations: 'disabled', timeout: 4000 });
+                  tookScreenshot = true;
+                } catch {}
+              }
+
+              if (tookScreenshot && fs.existsSync(p1)) {
+                fs.copyFileSync(p1, p2);
+                log(`Screenshot OK (${label} ${width}x${height})`);
+              } else {
+                throw new Error('Playwright screenshot capture failed');
+              }
             } catch (err) {
+              const cleanMsg = stripAnsi((err as Error)?.message || String(err));
               const fallback = path.join(screensDir, 'desktop.png');
               if (fs.existsSync(fallback) && fallback !== p1) {
                 fs.copyFileSync(fallback, p1);
                 fs.copyFileSync(fallback, p2);
-                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — using desktop frame as fallback`);
+                log(`Warning: ${label} screenshot failed (${cleanMsg}) — using desktop frame as fallback`);
               } else {
-                log(`Warning: ${label} screenshot failed (${(err as Error)?.message || err}) — using server fallback preview`);
+                const fallbackBuf = createMinimalPngBuffer(width, height);
+                fs.writeFileSync(p1, fallbackBuf);
+                fs.writeFileSync(p2, fallbackBuf);
+                log(`Warning: ${label} screenshot failed (${cleanMsg}) — generated preview frame fallback`);
               }
             }
           };

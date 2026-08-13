@@ -126,6 +126,11 @@ export function registerJobIdempotencyKey(key: string, jobId: string): void {
   idempotencyStore.set(key, { jobId, createdAt: Date.now() });
 }
 
+export function stripAnsi(str: string): string {
+  if (!str) return '';
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').replace(/\[\d{1,2}m/g, '');
+}
+
 export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idempotencyKey?: string): JobState {
   cleanupOldExportJobs();
 
@@ -138,7 +143,7 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idem
   }
 
   const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
+  const timeStr = new Date().toISOString();
   const job: JobState = {
     id: jobId,
     url,
@@ -159,7 +164,7 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idem
     try {
       const current = jobStore.get(jobId);
       if (current && ACTIVE_STATUSES.has(current.status)) {
-        const timeNow = new Date().toLocaleTimeString('en-US', { hour12: true });
+        const timeNow = new Date().toISOString();
         console.error(`[Job Watchdog] Job ${jobId} timed out after ${EXPORT_JOB_TIMEOUT_MS}ms`);
         current.status = 'failed';
         current.error = 'Export timed out. The backend engine or target site took too long to process.';
@@ -215,7 +220,7 @@ export function toPublicJob(job: JobState) {
     paymentApproved: job.paymentApproved,
     paymentSubmittedAt: job.paymentSubmittedAt,
     screenshots: job.screenshots,
-    logs: (job.logs || []).map((line) => line.replace(/\bUTR[:\s]+[A-Za-z0-9]{4,}/gi, 'UTR: [redacted]')),
+    logs: (job.logs || []).map((line) => stripAnsi(line).replace(/\bUTR[:\s]+[A-Za-z0-9]{4,}/gi, 'UTR: [redacted]')),
   };
 }
 
@@ -224,8 +229,9 @@ export function updateJob(jobId: string, updates: Partial<JobState>, logMsg?: st
   if (!job) return;
   Object.assign(job, updates);
   if (logMsg) {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
-    job.logs.push(`[${timeStr}] ${logMsg}`);
+    const timeStr = new Date().toISOString();
+    const cleanMsg = stripAnsi(logMsg);
+    job.logs.push(`[${timeStr}] ${cleanMsg}`);
   }
 }
 
@@ -249,7 +255,7 @@ export function cancelExportJob(jobId: string): JobState | undefined {
   job.status = 'cancelled';
   job.cancelledAt = Date.now();
   job.progressMessage = 'Export cancelled.';
-  const timeStr = new Date().toLocaleTimeString('en-US', { hour12: true });
+  const timeStr = new Date().toISOString();
   job.logs.push(`[${timeStr}] Job cancelled by user.`);
   try {
     const exportDir = path.resolve(process.cwd(), 'exports', jobId);
@@ -260,3 +266,4 @@ export function cancelExportJob(jobId: string): JobState | undefined {
   } catch {}
   return job;
 }
+

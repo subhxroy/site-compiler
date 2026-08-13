@@ -6,6 +6,17 @@ import { useAuth, UserExportRecord } from '@/lib/firebase/auth-context';
 import { getApiUrl } from '@/lib/api-config';
 import { AuthModal } from '@/components/auth-modal';
 
+function formatDateTime(val?: string | number | null): string {
+  if (!val) return 'N/A';
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return 'N/A';
+  }
+}
+
 export default function ExportHistoryPage() {
   const { user, loading, getUserExports } = useAuth();
   const [exports, setExports] = useState<UserExportRecord[]>([]);
@@ -94,7 +105,7 @@ export default function ExportHistoryPage() {
                   </div>
                   <div className="text-xs text-[#6a6b6c] truncate">{rec.url}</div>
                   <div className="font-mono text-[10px] text-[#6a6b6c]">
-                    Job ID: {rec.jobId} · {new Date(rec.createdAt).toLocaleDateString()}
+                    Job ID: {rec.jobId} · {formatDateTime(rec.createdAt)}
                   </div>
                 </div>
 

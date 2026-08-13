@@ -49,16 +49,14 @@ async function runWithBoundedConcurrency<T>(
   limit: number,
   fn: (item: T) => Promise<void>
 ): Promise<void> {
-  const executing: Promise<void>[] = [];
+  const executing = new Set<Promise<void>>();
   for (const item of items) {
-    const p = Promise.resolve().then(() => fn(item));
-    executing.push(p);
-    if (limit <= items.length) {
-      const e: Promise<void> = p.then(() => {
-        executing.splice(executing.indexOf(e), 1);
-      });
-    }
-    if (executing.length >= limit) {
+    const p = (async () => {
+      await fn(item);
+    })();
+    executing.add(p);
+    p.finally(() => executing.delete(p));
+    if (executing.size >= limit) {
       await Promise.race(executing);
     }
   }

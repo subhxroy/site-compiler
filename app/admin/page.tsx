@@ -42,6 +42,17 @@ interface SystemStats {
   backendUrl: string;
 }
 
+function formatDateTime(val?: string | number | null): string {
+  if (!val) return 'N/A';
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return 'N/A';
+  }
+}
+
 export default function AdminPortalPage() {
   const { user, loading: authLoading, signInWithGoogle, signInWithEmail, signOutUser, getIdToken } = useAuth();
   
@@ -568,7 +579,7 @@ export default function AdminPortalPage() {
 
                       {/* Joined Date */}
                       <td className="px-6 py-4 font-mono text-[11px] text-[#6a6b6c]">
-                        {new Date(u.createdAt).toLocaleDateString()}
+                        {formatDateTime(u.createdAt)}
                       </td>
 
                       {/* Toggle Permission Button */}

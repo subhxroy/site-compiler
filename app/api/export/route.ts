@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     }
 
     // Local Node.js execution fallback
-    const job = createJob(safeUrl, format);
+    const job = createJob(safeUrl, format, idempotencyKey);
 
     // Dynamically import the heavy processor (Playwright + generators) so this
     // serverless function never bundles/loads it on the Netlify edge.
