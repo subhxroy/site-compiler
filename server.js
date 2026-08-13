@@ -20,11 +20,16 @@ console.log('\x1b[35m%s\x1b[0m', '   🚀 SITECOMPILER MULTI-PORTAL SYSTEM BOOTS
 console.log('\x1b[36m%s\x1b[0m', '===============================================================\n');
 
 function runService(name, command, args, color, cwd = process.cwd()) {
+  const envVars = { ...process.env };
+  if (name.includes('Backend')) {
+    envVars.PORT = '3001';
+  }
+
   const child = spawn(command, args, {
     cwd,
     stdio: 'pipe',
-    shell: false,
-    env: { ...process.env, PORT: name === 'Express Backend' ? '3001' : undefined },
+    shell: isWindows,
+    env: envVars,
   });
 
   child.stdout.on('data', (data) => {
