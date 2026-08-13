@@ -61,8 +61,8 @@ export async function GET(
       <rect x="160" y="68" width="1120" height="24" rx="6" fill="#1e1f23"/>
       <text x="720" y="84" fill="#8a8b8d" font-family="monospace" font-size="12" text-anchor="middle">https://sitecompiler.dev/export/${id}</text>
       <circle cx="720" cy="400" r="40" fill="#ff6363" fill-opacity="0.1" stroke="#ff6363" stroke-width="2"/>
-      <text x="720" y="480" fill="#ffffff" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">SiteCompiler Export Preview</text>
-      <text x="720" y="515" fill="#8a8b8d" font-family="sans-serif" font-size="14" text-anchor="middle">Job ID: ${id} (${type})</text>
+      <text x="720" y="480" fill="#ffffff" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">SiteCompiler Live Preview</text>
+      <text x="720" y="515" fill="#8a8b8d" font-family="sans-serif" font-size="14" text-anchor="middle">Crawling target site &amp; capturing screenshots... (${type})</text>
     </svg>`;
     return new NextResponse(svg, {
       headers: {

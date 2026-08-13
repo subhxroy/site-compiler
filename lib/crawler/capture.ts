@@ -680,68 +680,41 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         if (isEntry) {
           log('Taking true responsive breakpoint screenshots of main page...');
 
-          // Inject CSS to freeze infinite animations & transitions so Playwright's compositor captures frame instantly
-          try {
-            await page.addStyleTag({
-              content: `
-                *, *::before, *::after {
-                  animation-duration: 0.001ms !important;
-                  animation-delay: 0s !important;
-                  animation-iteration-count: 1 !important;
-                  transition-duration: 0.001ms !important;
-                  transition-delay: 0s !important;
-                  scroll-behavior: auto !important;
-                }
-              `
-            }).catch(() => {});
-          } catch {}
-
           const takeBreakpointShot = async (label: 'desktop' | 'tablet' | 'mobile', width: number, height: number) => {
             const p1 = path.join(screensDir, `${label}.png`);
             const p2 = path.join(screensExportDir, `${label}.png`);
+
             try {
               await page.setViewportSize({ width, height });
-              await page.waitForTimeout(200);
+              await page.waitForTimeout(300);
 
-              // Quick font wait (max 300ms) so Playwright doesn't stall waiting for dynamic fonts
-              try {
-                await page.evaluate(() => Promise.race([
-                  document.fonts.ready,
-                  new Promise((r) => setTimeout(r, 300)),
-                ]));
-              } catch {}
-
-              let tookScreenshot = false;
-              try {
-                await page.screenshot({ path: p1, fullPage: false, animations: 'disabled', scale: 'css', timeout: 6000 });
-                tookScreenshot = true;
-              } catch (shotErr) {
-                // Secondary fallback attempt using body locator screenshot
-                try {
-                  await page.locator('body').screenshot({ path: p1, animations: 'disabled', timeout: 4000 });
-                  tookScreenshot = true;
-                } catch {}
-              }
-
-              if (tookScreenshot && fs.existsSync(p1)) {
+              await page.screenshot({ path: p1, fullPage: false, animations: 'disabled', scale: 'css', timeout: 10000 });
+              if (fs.existsSync(p1) && fs.statSync(p1).size > 100) {
                 fs.copyFileSync(p1, p2);
                 log(`Screenshot OK (${label} ${width}x${height})`);
-              } else {
-                throw new Error('Playwright screenshot capture failed');
+                return;
               }
             } catch (err) {
               const cleanMsg = stripAnsi((err as Error)?.message || String(err));
-              const fallback = path.join(screensDir, 'desktop.png');
-              if (fs.existsSync(fallback) && fallback !== p1) {
-                fs.copyFileSync(fallback, p1);
-                fs.copyFileSync(fallback, p2);
-                log(`Warning: ${label} screenshot failed (${cleanMsg}) — using desktop frame as fallback`);
-              } else {
-                const fallbackBuf = createMinimalPngBuffer(width, height);
-                fs.writeFileSync(p1, fallbackBuf);
-                fs.writeFileSync(p2, fallbackBuf);
-                log(`Warning: ${label} screenshot failed (${cleanMsg}) — generated preview frame fallback`);
+              log(`Warning: ${label} screenshot initial attempt failed (${cleanMsg}). Trying body locator fallback...`);
+            }
+
+            // Retry with body locator
+            try {
+              await page.locator('body').screenshot({ path: p1, animations: 'disabled', timeout: 5000 });
+              if (fs.existsSync(p1) && fs.statSync(p1).size > 100) {
+                fs.copyFileSync(p1, p2);
+                log(`Screenshot OK via body locator (${label} ${width}x${height})`);
+                return;
               }
+            } catch {}
+
+            // Fallback to desktop.png if desktop shot was taken
+            const desktopFallback = path.join(screensDir, 'desktop.png');
+            if (label !== 'desktop' && fs.existsSync(desktopFallback) && fs.statSync(desktopFallback).size > 100) {
+              fs.copyFileSync(desktopFallback, p1);
+              fs.copyFileSync(desktopFallback, p2);
+              log(`Warning: ${label} screenshot failed — using desktop frame as fallback`);
             }
           };
 
