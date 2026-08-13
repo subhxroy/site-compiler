@@ -74,9 +74,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let unsubscribe = () => {};
 
+    if (!auth) {
+      setLoading(false);
+      clearTimeout(timer);
+      return;
+    }
+
     try {
-      if (auth) {
-        unsubscribe = onAuthStateChanged(
+      unsubscribe = onAuthStateChanged(
         auth,
         async (currentUser: User | null) => {
           clearTimeout(timer);
@@ -130,8 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       );
-    }
-  } catch {
+    } catch {
       clearTimeout(timer);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
@@ -202,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getIdToken = async (): Promise<string | null> => {
     try {
-      if (!auth.currentUser) return null;
+      if (!auth || !auth.currentUser) return null;
       return await auth.currentUser.getIdToken(true);
     } catch {
       return null;

@@ -38,40 +38,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }, 2500);
 
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (currentUser) => {
-        clearTimeout(timer);
-        setUser(currentUser);
-        setLoading(false);
-      },
-      (error) => {
-        clearTimeout(timer);
-        console.error('[Firebase Auth Error]', error);
-        setLoading(false);
-      }
-    );
+    let unsubscribe = () => {};
+
+    if (!auth) {
+      setLoading(false);
+      clearTimeout(timer);
+      return;
+    }
+
+    try {
+      unsubscribe = onAuthStateChanged(
+        auth,
+        (currentUser) => {
+          clearTimeout(timer);
+          setUser(currentUser);
+          setLoading(false);
+        },
+        (error) => {
+          clearTimeout(timer);
+          console.error('[Firebase Auth Error]', error);
+          setLoading(false);
+        }
+      );
+    } catch {
+      clearTimeout(timer);
+      setLoading(false);
+    }
 
     return () => {
       clearTimeout(timer);
-      unsubscribe();
+      try { unsubscribe(); } catch {}
     };
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth) throw new Error('Firebase Auth is not configured.');
     await signInWithPopup(auth, googleProvider);
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
+    if (!auth) throw new Error('Firebase Auth is not configured.');
     await signInWithEmailAndPassword(auth, email, pass);
   };
 
   const signOutUser = async () => {
-    await firebaseSignOut(auth);
+    if (auth) {
+      await firebaseSignOut(auth);
+    }
   };
 
   const getIdToken = async () => {
-    if (!auth.currentUser) return null;
+    if (!auth || !auth.currentUser) return null;
     return await auth.currentUser.getIdToken(true);
   };
 
@@ -91,6 +108,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
+export const useAuth = () => useContext(AuthContext);
