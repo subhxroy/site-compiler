@@ -170,7 +170,7 @@ const ANIMATION_SHIM_JS = `
 
   /* ── 1. Responsive breakpoint classes (Framer SSR) ── */
   // Read breakpoint hashes dynamically from the Framer-generated CSS block.
-  // Framer embeds `@media(min-width: 1280px){.hidden-HASH{display:none!important}}`
+  // Framer embeds media queries like @media(min-width: 1280px){.hidden-HASH{display:none!important}}
   // in a <style data-framer-breakpoint-css> tag. We parse those hashes at runtime
   // so the shim stays correct across Framer republishes (hashes change per build).
   var _framerBreakpointHashes = null;
