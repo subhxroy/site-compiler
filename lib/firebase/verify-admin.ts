@@ -8,6 +8,20 @@ export interface AdminAuthResult {
   status?: number;
 }
 
+function isAdminEmail(email?: string): boolean {
+  const e = (email || '').toLowerCase().trim();
+  if (!e) return false;
+
+  // Exact allowlist matching only
+  const defaultAdminEmails = ['contact.subhroy-1@gmail.com', 'contact.subhroy@gmail.com', 'subhxroy@gmail.com'];
+  const allowlist = (process.env.ADMIN_EMAILS || defaultAdminEmails.join(','))
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
+  return allowlist.includes(e);
+}
+
 export async function verifyAdminRequest(req: Request): Promise<AdminAuthResult> {
   try {
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
@@ -30,19 +44,49 @@ export async function verifyAdminRequest(req: Request): Promise<AdminAuthResult>
     }
 
     const uid = decodedToken.uid;
+    const email = (decodedToken.email || '').toLowerCase().trim();
+    const isAllowlistedAdmin = isAdminEmail(email);
 
-    // Check user role in Firestore
-    const userDoc = await adminDb.collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      return { authorized: false, error: 'User record not found in database', status: 403 };
+    // Check / update user role in Firestore
+    try {
+      const userDoc = await adminDb.collection('users').doc(uid).get();
+      if (!userDoc.exists) {
+        if (isAllowlistedAdmin) {
+          await adminDb.collection('users').doc(uid).set({
+            uid,
+            email,
+            displayName: decodedToken.name || email.split('@')[0] || 'Admin',
+            photoURL: decodedToken.picture || null,
+            canExport: true,
+            role: 'admin',
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+          }).catch(() => {});
+          return { authorized: true, uid, email };
+        }
+        return { authorized: false, error: 'User record not found in database', status: 403 };
+      }
+
+      const userData = userDoc.data();
+      if (isAllowlistedAdmin) {
+        if (userData?.role !== 'admin') {
+          await adminDb.collection('users').doc(uid).update({ role: 'admin' }).catch(() => {});
+        }
+        return { authorized: true, uid, email };
+      }
+
+      if (userData?.role !== 'admin') {
+        return { authorized: false, error: 'Forbidden: Administrator privileges required', status: 403 };
+      }
+
+      return { authorized: true, uid, email };
+    } catch (dbErr) {
+      if (isAllowlistedAdmin) {
+        return { authorized: true, uid, email };
+      }
+      throw dbErr;
     }
-
-    const userData = userDoc.data();
-    if (userData?.role !== 'admin') {
-      return { authorized: false, error: 'Forbidden: Administrator privileges required', status: 403 };
-    }
-
-    return { authorized: true, uid, email: decodedToken.email };
   } catch (error: unknown) {
     console.error('[Admin Auth Error]:', error);
     return { authorized: false, error: (error as Error).message || 'Internal authentication error', status: 500 };

@@ -14,7 +14,13 @@ function getReadableErrorMessage(err: unknown): string {
   const msg = (err as { message?: string })?.message || String(err);
 
   if (code.includes('auth/api-key-not-valid') || msg.includes('api-key-not-valid') || msg.includes('API key')) {
-    return 'Firebase API key is not configured in Netlify environment variables. Please set NEXT_PUBLIC_FIREBASE_API_KEY in your Netlify site settings.';
+    return 'Firebase API key is not valid. Please verify your Firebase API key in .env.local.';
+  }
+  if (code.includes('auth/unauthorized-domain')) {
+    return 'This domain (e.g. localhost) is not authorized in Firebase Console. Please add localhost to Firebase Console > Authentication > Settings > Authorized domains.';
+  }
+  if (code.includes('auth/popup-blocked')) {
+    return 'Google Sign-in popup was blocked by your browser. Please click the popup icon in your browser address bar to allow popups.';
   }
   if (code.includes('auth/invalid-credential') || code.includes('auth/user-not-found')) {
     return 'Account not found or password incorrect. If you are new, click "Sign up" below to create an account.';
@@ -32,7 +38,7 @@ function getReadableErrorMessage(err: unknown): string {
     return 'Google Sign-in popup was closed before completing.';
   }
   if (code.includes('auth/operation-not-allowed')) {
-    return 'Authentication method is not enabled in Firebase Console. Please enable Email/Password and Google sign-in in your Firebase Auth settings.';
+    return 'Authentication method is not enabled in Firebase Console. Please enable Email/Password and Google sign-in in Firebase Console > Authentication > Sign-in method.';
   }
   return msg.replace(/^Firebase:\s*/, '').trim();
 }
