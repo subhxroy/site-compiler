@@ -242,10 +242,10 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - GET. `id` validated `^[a-zA-Z0-9_-]{1,128}$`. Proxies to backend `/api/export/:id/download`, adding header `x-sitecompiler-admin-bypass: <BACKEND_ADMIN_SECRET>` **only when the caller is a verified admin OR the approval is approved**. Server-side secret match, fail-closed.
 
 ### `api/job/[id]/screenshot/route.ts`
-- GET. `type` ∈ desktop/tablet/mobile. Proxies the backend screenshot (`image/png`, cache 1h). In local mode it checks the two path candidates (`exports/{id}/raw/screenshots/*.png` + `exports/{id}/screenshots/*.png`), **falls back to the desktop frame** when the requested viewport is missing, and finally returns an **inline SVG placeholder** ("SiteCompiler Live Preview") so the preview `<img>` never 404s.
+- GET. `type` ∈ desktop/tablet/mobile. Proxies the backend screenshot. In local mode it checks the two path candidates (`exports/{id}/raw/screenshots/*.png` + `exports/{id}/screenshots/*.png`), **falls back to the desktop frame** when the requested viewport is missing, and returns an **inline SVG placeholder** with `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` so browsers never cache the temporary frame while crawling. Once Playwright completes, real PNG screenshots are served with `Cache-Control: public, max-age=60`, auto-swapping in the UI via cache-busting version params (`&v=${job.status}`).
 
 ### `api/user/sync/route.ts`
-- POST. Verifies the Bearer ID token; **identity is derived from the token, never the body**. Upserts Firestore `users/{uid}` with displayName/photoURL. Computes `isAdmin`: `ADMIN_EMAILS` env allowlist; otherwise emails containing `subhroy` or `whysaurjya` (owner emails). **The `'admin'` substring was deliberately excluded** — a naive substring match on `'admin'` would let anyone register `admin@x.com` and escalate to admin (historical privilege-escalation root cause, fixed). Rate 60/min.
+- POST. Verifies the Bearer ID token; **identity is derived from the token, never the body**. Upserts Firestore `users/{uid}` with displayName/photoURL. Computes `isAdmin`: exact email match against `ADMIN_EMAILS` env allowlist (e.g. `contact.subhroy@gmail.com`, `contact.subhroy-1@gmail.com`, `subhxroy@gmail.com`) or fallback owner matches. **The generic `'admin'` substring is excluded** to prevent `admin@attacker.com` privilege escalation. Rate 60/min.
 
 ### `api/user/exports/route.ts`
 - GET (list the caller's exports) / POST (save one). **IDOR-safe**: uid comes from the verified token; any `uid` in query/body is ignored. GET returns up to 50, newest first. POST upserts into `users/{uid}/exports`. Rate: **GET 60/min, POST 30/min**. (Note: `admin/stats` counts the top-level `user_exports` collection, which nothing writes — the real records live in the `users/{uid}/exports` subcollection, so that stat reads ~0.)
@@ -276,7 +276,7 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 ## 7. Components (`components/`)
 
 ### `navbar.tsx`
-- 'use client'. Fixed pill header (backdrop-blur 48px, coral rotated-diamond logo, "v1.104" mono badge). Desktop links: Features, Pricing, Exports, Saved History, Blog, Docs. Avatar dropdown (photo or initial, display name, email, Export History link, Sign Out). Sign In button opens `AuthModal`. "Export Code" CTA → `/#export-form`.
+- 'use client'. Fixed pill header (backdrop-blur 48px, coral rotated-diamond logo, "v1.104" mono badge). Desktop links: Features, Pricing, Exports, Saved History, Blog, Docs. Avatar dropdown: photo with `referrerPolicy="no-referrer"` (prevents Google CDN 403 Forbidden errors when loaded locally) with fallback to initials, display name, email, Export History link, Sign Out. Sign In button opens `AuthModal`. "Export Code" CTA → `/#export-form`.
 
 ### `footer.tsx`
 - 4-column link grid + brand blurb + technical strip (v1.104 • "Next.js 16 App Router" • "100% Offline Bundled"; RSS / llms.txt / humans.txt / security.txt links; © year; "Built by Subhankar Roy").
@@ -360,9 +360,15 @@ Playwright crawler:
 
 ### `lib/generator/html/build.ts`
 - `buildHtmlExport`. Injects:
-  - `FRAMER_FONT_CSS` — Fontshare Archivo + Google Inter fallbacks.
-  - `CRITICAL_OVERRIDE_CSS` with id `sitecompiler-critical` (smooth scroll, `overflow-x: clip`, Framer appear-state reveal fix).
+  - Native `@font-face` rules preserved directly from source `<style data-framer-font-css>` without generic fallbacks.
+  - `CRITICAL_OVERRIDE_CSS` with id `sitecompiler-critical` (smooth scroll, `overflow-x: clip`, visibility/opacity reveal fix without blanket `transform: none` or `filter: none` overrides that break 3D layout or scroll filters).
 - Outputs hydrated `index.html` + subpages, consolidated `styles.css`, and `script.js` (Universal Animation Shim v3.0).
+- **Universal Animation Shim v3.0 features**:
+  - `getFramerHashes()`: dynamically parses responsive breakpoint hashes from `<style data-framer-breakpoint-css>` at runtime so responsive show/hide rules stay aligned across Framer updates.
+  - `initFramerAvatar()`: 60fps RAF Lerp scroll engine (`requestAnimationFrame` with damping factor `0.14`). Avatar begins in moody Black & White (`grayscale(100%) contrast(1.08) brightness(0.92)` at scale `0.75`), and smoothly dissolves into full vibrant color (`grayscale(0%)` / `none`) and expands to scale `1.0` as the user scrolls past the hero section.
+  - `initScrollReveal()`: IntersectionObserver reveal for elements while preserving custom filter animations on avatar components.
+  - `initScrollColourText()`: word-by-word quote reveal on scroll.
+  - `initCardHovers()`, `initMobileNav()`, `initStickyHeader()`, `initCounters()`, `initParallax()`, `initMarquee()`, `initLightbox()`.
 
 ### `lib/generator/react/jsx-builder.ts`
 - ts-morph. `sanitizeComponentName` (falls back to `Section{index}`). `convertCheerioElementToJsx`: HTML→JSX attribute map (class→className, for→htmlFor, autocomplete, etc.). Text braces `{`/`}` wrapped as `{'{'}`/`{'}'}` (JSX text can't hold raw braces; HTML entities print literally in JSX, so `&#123;` would be wrong) — single-pass callback, never chained replaces. Attribute values escape `"` as `\"`. Inline `style` → `convertStyleStringtoTailwind`; if conversion bails (unsafe value), the original `style` attribute is kept so styling is never silently lost.
@@ -498,6 +504,9 @@ Playwright crawler:
 18. **Watchdogs everywhere** — 2.5-min crawl watchdog (capture finalizes with captured pages), 5-min per-job watchdog (`EXPORT_JOB_TIMEOUT_MS` force-fails active jobs), 5-min client polling watchdog + 30-consecutive-error fail. A hung phase can't wedge the UI or leave a job `pending` forever.
 19. **`toPublicJob` redacts UTR** — public status payloads mask UTR numbers (`UTR: [redacted]`) and drop sender account / user email; jobId is unauthenticated, so PII must never ride the public shape.
 20. **Only ONE backend unlock path on download** — the `x-sitecompiler-admin-bypass` secret header. The advertised Bearer-Firebase-token branch is **dead code**: `adminAuth` is never imported in `server/index.ts`, the call throws, the catch fail-closes 403. The Netlify download route does the admin/approval check and passes the header through; direct-to-Render calls must supply the header themselves.
+21. **Framer Hero Avatar & Scroll Fidelity (v3.0)** — `initFramerAvatar()` runs a 60fps `requestAnimationFrame` Lerp scroll engine (`0.14` damping). The portrait starts in Black & White (`grayscale(100%) contrast(1.08) brightness(0.92)` at scale `0.75`) and smoothly dissolves into full vibrant color and expands to scale `1.0` as the user scrolls past the hero. `CRITICAL_OVERRIDE_CSS` removes blanket `filter: none !important` and `transform: none !important` to preserve 3D card flips and scroll filters.
+22. **Google CDN Avatar Referrer Policy** — Google profile image CDN (`lh3.googleusercontent.com`) returns 403 when requests send `localhost` referrers. All avatar `<img>` tags carry `referrerPolicy="no-referrer"` with fallback to user initials on error.
+23. **Client Polling Watchdog Timeout Guard** — The 5-minute client-side watchdog only fails active running jobs (`job.status !== 'completed'`). It never overrides an already-completed export awaiting review or previewing.
 
 ---
 
