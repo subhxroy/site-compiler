@@ -198,8 +198,8 @@ function StepBadge({ state, label }: { state: 'done' | 'active' | 'idle' | 'fail
   const base = 'text-xs font-medium px-3 py-1.5 rounded-[6px] flex items-center gap-1.5 transition-all border';
   if (state === 'done')   return <span className={`${base} bg-[#59d499]/10 text-[#59d499] border-[#59d499]/30`}><Icon.Check size={12} />{label}</span>;
   if (state === 'active') return <span className={`${base} bg-[#ff6363]/15 text-[#ff6363] border-[#ff6363]/40`}><Icon.Spinner size={12} />{label}</span>;
-  if (state === 'failed') return <span className={`${base} bg-red-500/15 text-red-400 border-red-500/30`}><Icon.X size={12} />{label}</span>;
-  return <span className={`${base} bg-[#07080a] text-[#6a6b6c] border-[#1b1c1e]`}>{label}</span>;
+  if (state === 'failed') return <span className={`${base} bg-[#ff6363]/20 text-[#ff6363] border-[#ff6363]/60`}><Icon.X size={12} />{label}</span>;
+  return <span className={`${base} bg-[#1b1c1e] text-[#6a6b6c] border-[#2f3031] opacity-60`}><span className="w-1.5 h-1.5 rounded-full bg-[#6a6b6c]" />{label}</span>;
 }
 
 const viewportIcons = {
@@ -216,7 +216,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [jobId,    setJobId]    = useState<string | null>(null);
   const [job,      setJob]      = useState<JobState | null>(null);
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [tab,      setTab]      = useState<'preview' | 'logs' | 'stats'>('preview');
+  const [tab,      setTab]      = useState<'preview' | 'live' | 'logs' | 'stats'>('preview');
   const [savedToFirebase, setSavedToFirebase] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -312,12 +312,15 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             console.log(`[POLL DEBUG] received status: ${data.status} | message: ${data.progressMessage}`);
             setJob(data);
             if (TERMINAL_STATUSES.includes(data.status)) {
-              console.log(`[POLL DEBUG] Job ${data.id} reached terminal state: ${data.status}`);
               setLoading(false);
               localStorage.removeItem('sitecompiler_active_job_id');
-              const awaitingApproval =
-                data.status === 'completed' && data.paymentSubmitted && !data.paymentApproved;
-              if (!awaitingApproval) clearInterval(iv);
+              // Keep polling every 2s while job is completed but payment is not yet approved
+              // so the UI auto-updates immediately when Admin approves the payment!
+              const awaitingApproval = data.status === 'completed' && !data.paymentApproved;
+              if (!awaitingApproval) {
+                console.log(`[POLL DEBUG] Job ${data.id} reached terminal state with payment approval: ${data.status}`);
+                clearInterval(iv);
+              }
             }
           }
         } else if (res.status === 404) {
@@ -821,6 +824,18 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   </button>
 
                   <button
+                    onClick={() => setTab('live')}
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      tab === 'live'
+                        ? 'bg-[#1b1c1e] text-white border border-[#363739]'
+                        : 'text-[#6a6b6c] hover:text-white'
+                    }`}
+                  >
+                    <Icon.Globe />
+                    <span>Live Interactive</span>
+                  </button>
+
+                  <button
                     onClick={() => setTab('logs')}
                     className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
                       tab === 'logs'
@@ -896,6 +911,15 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                       <div className="text-xs font-mono">Screenshots rendering…</div>
                     </div>
                   )}
+                </div>
+              ) : tab === 'live' ? (
+                <div className="raycast-key-card p-0 rounded-[10px] h-[550px] overflow-hidden bg-[#040506] relative border border-[#2f3031]">
+                  <iframe
+                    src={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
+                    title="Live Interactive Site Preview"
+                    className="w-full h-full border-0 bg-[#07080a]"
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                  />
                 </div>
               ) : tab === 'logs' ? (
                 <div className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5">

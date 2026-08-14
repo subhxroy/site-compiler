@@ -17,6 +17,24 @@ export function cssPropertyToTailwind(prop: string, value: string): string | nul
   const cleanProp = prop.trim().toLowerCase();
   const cleanVal = value.trim().replace('!important', '').trim().toLowerCase();
 
+  // Complex artistic styling properties MUST be preserved as JSX style objects
+  if (
+    cleanProp === 'transform' ||
+    cleanProp === 'transform-origin' ||
+    cleanProp === 'filter' ||
+    cleanProp === 'backdrop-filter' ||
+    cleanProp === 'perspective' ||
+    cleanProp === 'clip-path' ||
+    cleanProp === 'mask' ||
+    cleanProp === 'mask-image' ||
+    cleanProp === 'box-shadow' ||
+    cleanProp === 'transition' ||
+    cleanProp === 'animation' ||
+    cleanProp.startsWith('--')
+  ) {
+    return null;
+  }
+
   // Color mapping helpers
   if (cleanProp === 'color') {
     if (cleanVal === '#ffffff' || cleanVal === 'white') return 'text-white';
@@ -115,10 +133,16 @@ export function cssPropertyToTailwind(prop: string, value: string): string | nul
   return arbitraryValue(cleanProp, cleanVal);
 }
 
-export function convertStyleStringtoTailwind(styleString: string): string {
-  if (!styleString) return '';
+export interface TailwindConversionResult {
+  classes: string;        // safely-convertible declarations, as Tailwind utility classes
+  remainingStyle: string; // declarations that must stay inline (transform, filter, etc.)
+}
+
+export function convertStyleStringtoTailwind(styleString: string): TailwindConversionResult {
+  if (!styleString) return { classes: '', remainingStyle: '' };
   const declarations = styleString.split(';').filter((s) => s.trim().length > 0);
   const classes: string[] = [];
+  const remaining: string[] = [];
 
   for (const decl of declarations) {
     // Split on the FIRST colon only — values may themselves contain colons
@@ -131,13 +155,15 @@ export function convertStyleStringtoTailwind(styleString: string): string {
 
     const cls = cssPropertyToTailwind(prop, val);
     if (cls === null) {
-      // Unsafe to represent as a Tailwind utility — bail out entirely so the
-      // caller preserves the original inline style instead of emitting a
-      // broken class (which would silently drop the styling).
-      return '';
+      // Unsafe/unmappable — keep ONLY this declaration inline. Previously
+      // this bailed the ENTIRE style string, so any element with even one
+      // transform/filter/transition lost all of its Tailwind classes and
+      // became an unreadable, hard-to-edit inline style blob.
+      remaining.push(`${prop}: ${val}`);
+    } else {
+      classes.push(cls);
     }
-    classes.push(cls);
   }
 
-  return classes.join(' ');
+  return { classes: classes.join(' '), remainingStyle: remaining.join('; ') };
 }

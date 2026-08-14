@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 
 export interface DetectedSection {
   id: string;
@@ -184,6 +185,51 @@ Return ONLY valid JSON.`;
       }
     });
 
+    // ── Resolve + freeze each section's HTML NOW, against the same
+    // cleanedHtml the model actually looked at, so generation never has to
+    // re-run the (possibly ambiguous/hallucinated) selector against a
+    // different HTML string later. This is the single point of truth for
+    // "what content belongs to this section."
+    const $verify = cheerio.load(cleanedHtml);
+    const usedNodes = new Set<AnyNode>(); // track actual DOM node identity to avoid two sections claiming the same element
+    let unresolvedCount = 0;
+
+    for (const section of parsedSections) {
+      let el = section.selector ? $verify(section.selector).first() : $verify();
+
+      // Guard against a selector matching an element another section already claimed
+      // (e.g. an overly-generic selector like "div" matching the same wrapper twice).
+      if (el.length > 0) {
+        if (usedNodes.has(el[0])) {
+          el = $verify(); // treat as unresolved rather than let it silently duplicate content across sections
+        } else {
+          usedNodes.add(el[0]);
+        }
+      }
+
+      if (el.length > 0) {
+        section.htmlContent = $verify.html(el) || undefined;
+      } else {
+        unresolvedCount++;
+        console.warn(
+          `[Job ${jobId}] Section "${section.name}" selector "${section.selector}" did not match any element in the actual DOM — leaving unresolved instead of guessing.`
+        );
+        section.htmlContent = undefined;
+      }
+    }
+
+    if (unresolvedCount > 0) {
+      logAiResponse(
+        aiLogsDir,
+        '2_unresolved_sections.json',
+        JSON.stringify(
+          parsedSections.filter((s) => !s.htmlContent).map((s) => ({ id: s.id, name: s.name, selector: s.selector })),
+          null,
+          2
+        )
+      );
+    }
+
     return {
       sections: parsedSections,
       globalClassRenameMap,
@@ -200,37 +246,83 @@ function fallbackSectionDetection(cleanedHtml: string, aiLogsDir: string): Secti
   const sections: DetectedSection[] = [];
   let index = 1;
 
-  // Search for semantic containers or top-level main children
-  const topContainers = $('header, nav, section, footer, main > div, body > div');
+  // 1. Check if explicit semantic HTML5 elements exist
+  let topContainers = $('body > header, body > nav, body > main > section, body > section, body > footer');
+
+  // 2. If modern SPA (Framer / Webflow) where sections are inside SSR variants or main divs
+  if (topContainers.length <= 1) {
+    // Try finding Framer top-level named frames or section blocks
+    const framerNamedBlocks = $('[data-framer-name]:not([data-framer-name=""]):not(svg *)');
+    const framerSections = framerNamedBlocks.filter((_, el) => {
+      const parent = $(el).parent();
+      const name = $(el).attr('data-framer-name') || '';
+      return (
+        parent.is('body') ||
+        parent.hasClass('ssr-variant') ||
+        parent.is('main') ||
+        /^(Nav|Header|Hero|About|Projects|Work|Services|Features|Pricing|Testimonials|FAQ|Footer|Banner)/i.test(name)
+      );
+    });
+
+    if (framerSections.length > 1) {
+      topContainers = framerSections;
+    } else {
+      // Find top container with multiple child blocks
+      const mainContainer = $('.ssr-variant, main, body > div:first-child').first();
+      const directChildren = mainContainer.children(':not(script):not(style)');
+      if (directChildren.length > 1) {
+        topContainers = directChildren;
+      } else {
+        topContainers = $('header, nav, section, footer, main > div, body > div');
+      }
+    }
+  }
 
   topContainers.each((_, el) => {
     const tagName = el.tagName.toLowerCase();
     const classAttr = $(el).attr('class') || '';
     const idAttr = $(el).attr('id') || '';
+    const framerName = $(el).attr('data-framer-name') || '';
+    const textContent = ($(el).text() || '').substring(0, 100).toLowerCase();
 
     let name = 'Section';
-    if (tagName === 'header' || tagName === 'nav' || classAttr.includes('nav') || classAttr.includes('header')) {
+    if (framerName) {
+      // Clean up Framer name (e.g. "Hero Section" -> "Hero", "Navigation Bar" -> "Navbar")
+      name = framerName.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+      if (/nav|header|menu/i.test(name)) name = 'Navbar';
+      else if (/hero|intro|headline/i.test(name)) name = 'Hero';
+      else if (/footer|bottom|copyright/i.test(name)) name = 'Footer';
+      else if (/project|work|portfolio/i.test(name)) name = 'Projects';
+      else if (/about|bio|experience/i.test(name)) name = 'About';
+    } else if (tagName === 'header' || tagName === 'nav' || classAttr.includes('nav') || classAttr.includes('header') || /logo|menu|nav/i.test(textContent)) {
       name = 'Navbar';
-    } else if (tagName === 'footer' || classAttr.includes('footer')) {
+    } else if (tagName === 'footer' || classAttr.includes('footer') || textContent.includes('©') || textContent.includes('copyright') || textContent.includes('all rights reserved')) {
       name = 'Footer';
-    } else if (index === 1 || classAttr.includes('hero')) {
+    } else if (index === 1 || classAttr.includes('hero') || tagName === 'h1' || $(el).find('h1').length > 0) {
       name = 'Hero';
     } else if (classAttr.includes('feature')) {
       name = 'Features';
     } else if (classAttr.includes('pricing')) {
       name = 'Pricing';
+    } else if (classAttr.includes('project') || classAttr.includes('work') || classAttr.includes('portfolio')) {
+      name = 'Projects';
     } else {
-      name = `Section ${index}`;
+      name = `Section${index}`;
     }
 
-    const selector = idAttr ? `#${idAttr}` : classAttr ? `.${classAttr.split(/\s+/)[0]}` : `${tagName}:nth-of-type(${index})`;
+    const sectionId = `section-${index}`;
+    $(el).attr('data-sitecompiler-section', name);
+
+    const selector = idAttr
+      ? `#${idAttr}`
+      : `[data-sitecompiler-section="${name}"]`;
 
     sections.push({
-      id: `section-${index}`,
+      id: sectionId,
       name,
       selector,
       description: `Auto-detected ${name} element`,
-      htmlContent: $(el).html() || '',
+      htmlContent: $.html(el) || '',
     });
 
     index++;

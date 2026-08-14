@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import prettier from 'prettier';
 import { cleanDom } from '../../parser/dom-cleaner';
 import { parseAndConsolidateCss } from '../../parser/css-parser';
 import { processAssets } from '../../parser/asset-pipeline';
@@ -610,11 +611,16 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     // ── Inject animation shim ──
     $('body').append('  <script src="./script.js"></script>\n');
 
+    let htmlCode = $.html();
+    try {
+      htmlCode = await prettier.format(htmlCode, { parser: 'html', printWidth: 120 });
+    } catch {}
+
     const destPath = path.join(outputDir, pageItem.htmlFilename);
-    fs.writeFileSync(destPath, $.html(), 'utf-8');
+    fs.writeFileSync(destPath, htmlCode, 'utf-8');
 
     if (pageItem.htmlFilename === 'index.html') {
-      primaryCleanedHtml = $.html();
+      primaryCleanedHtml = htmlCode;
       primaryIndexHtmlPath = destPath;
     }
   }

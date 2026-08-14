@@ -192,7 +192,75 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idem
 
 export function getJob(jobId: string): JobState | undefined {
   cleanupOldExportJobs();
-  return jobStore.get(jobId);
+  const existing = jobStore.get(jobId);
+  if (existing) return existing;
+
+  // Rehydrate job state from disk if backend server was restarted
+  if (jobId && /^job_\d+_[a-z0-9]+$/i.test(jobId)) {
+    try {
+      const exportDir = path.resolve(process.cwd(), 'exports', jobId);
+      if (fs.existsSync(exportDir)) {
+        const zipPath = path.join(exportDir, `${jobId}.zip`);
+        const siteModelPath = path.join(exportDir, 'raw', 'site_model.json');
+        const metaPath = path.join(exportDir, 'raw', 'meta.json');
+
+        let url = 'https://exported-site.com';
+        let createdAt = Date.now();
+        let format: 'html' | 'react' | 'nextjs' = 'html';
+
+        if (fs.existsSync(siteModelPath)) {
+          try {
+            const model = JSON.parse(fs.readFileSync(siteModelPath, 'utf-8'));
+            if (model.baseUrl) url = model.baseUrl;
+            if (model.createdAt) createdAt = model.createdAt;
+          } catch {}
+        } else if (fs.existsSync(metaPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+            if (meta.canonicalUrl) url = meta.canonicalUrl;
+          } catch {}
+        }
+
+        if (fs.existsSync(path.join(exportDir, 'output', 'nextjs-export'))) {
+          format = 'nextjs';
+        }
+
+        const isZipReady = fs.existsSync(zipPath);
+        const stat = isZipReady ? fs.statSync(zipPath) : null;
+        const zipSizeKb = stat ? Math.round(stat.size / 1024) : undefined;
+
+        const restoredJob: JobState = {
+          id: jobId,
+          url,
+          format,
+          status: isZipReady ? 'completed' : 'failed',
+          progressMessage: isZipReady ? 'Export ready (restored from disk)' : 'Export job lost during server restart',
+          logs: [`Restored job state from disk for ${jobId}`],
+          createdAt,
+          completedAt: isZipReady ? (stat ? stat.mtimeMs : Date.now()) : undefined,
+          downloadUrl: isZipReady ? `/api/job/${jobId}/download` : undefined,
+          zipSizeKb,
+          pageCount: 1,
+          amount: 20,
+          paymentSubmitted: false,
+          paymentApproved: false,
+          screenshots: {
+            desktop: `/api/job/${jobId}/screenshot?type=desktop`,
+            tablet: `/api/job/${jobId}/screenshot?type=tablet`,
+            mobile: `/api/job/${jobId}/screenshot?type=mobile`,
+          },
+        };
+
+        jobStore.set(jobId, restoredJob);
+        console.log(`[Job Store] Rehydrated job ${jobId} from disk.`);
+        return restoredJob;
+      }
+    } catch (err) {
+      console.warn(`[Job Store] Failed to rehydrate job ${jobId} from disk:`, err);
+    }
+  }
+
+  return undefined;
 }
 
 /**

@@ -3,18 +3,31 @@ import * as fs from 'fs';
 import { ProcessedAssetMap } from './asset-pipeline';
 
 /**
- * Strip NUL bytes, BOMs, and zero-width padding that some servers/CDNs leave
- * in CSS served with UTF-16/UTF-32 byte order marks. The browser's DOM keeps
- * those NUL chars in `style.textContent`, Playwright serializes them back, and
- * postcss hard-crashes with `CssSyntaxError: Unknown word` mid-declaration.
+ * Strip NUL bytes, BOMs, zero-width padding, `@charset` directives in concatenated CSS,
+ * and decode HTML entities (like `&quot;`, `&apos;`, `&#34;`) that crash PostCSS with
+ * `CssSyntaxError: Unknown word`.
  */
 export function sanitizeCssText(raw: string): string {
   if (!raw) return raw;
   return raw
     .replace(/^\uFEFF/, '')
     .replace(/\u0000/g, '')
-    .replace(/^\x00/, '')
-    .replace(/\x00$/, '');
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    // Remove mid-file @charset declarations which crash PostCSS when combined
+    .replace(/@charset\s+["'][^"']+["'];?/gi, '')
+    // Decode HTML entities in CSS values / font names
+    .replace(/&quot;/gi, '"')
+    .replace(/&quot(?![a-zA-Z0-9])/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&apos(?![a-zA-Z0-9])/gi, "'")
+    .replace(/&#0*34;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&#x0*22;/gi, '"')
+    .replace(/&#x0*27;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&');
 }
 
 export interface CssRuleInfo {
@@ -37,14 +50,51 @@ export function parseAndConsolidateCss(
   // Read all CSS files
   for (const filePath of cssFilePaths) {
     if (fs.existsSync(filePath)) {
-      combinedCss += sanitizeCssText(fs.readFileSync(filePath, 'utf-8')) + '\n';
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        combinedCss += sanitizeCssText(content) + '\n';
+      } catch {}
     }
   }
 
-  // Parse CSS with PostCSS
-  const root = postcss.parse(sanitizeCssText(combinedCss));
   const classMap = new Map<string, string>();
   const rulesMap = new Map<string, string[]>(); // declarationString -> list of selectors sharing exact same CSS
+
+  let root: postcss.Root;
+  const sanitizedCombined = sanitizeCssText(combinedCss);
+
+  try {
+    root = postcss.parse(sanitizedCombined);
+  } catch (err: unknown) {
+    console.warn(`[CSS Parser Warning] Primary PostCSS parse failed: ${(err as Error)?.message || err}. Attempting fault-tolerant recovery...`);
+
+    // Fallback: Parse each file individually, skipping or repairing malformed syntax lines
+    root = postcss.root();
+
+    for (const filePath of cssFilePaths) {
+      if (!fs.existsSync(filePath)) continue;
+      try {
+        const rawContent = fs.readFileSync(filePath, 'utf-8');
+        const cleanContent = sanitizeCssText(rawContent);
+        try {
+          const subRoot = postcss.parse(cleanContent);
+          root.append(subRoot);
+        } catch (subErr) {
+          const lines = cleanContent.split('\n');
+          const errLine = (subErr as { line?: number })?.line;
+          if (errLine && errLine > 0 && errLine <= lines.length) {
+            lines.splice(errLine - 1, 1);
+          }
+          try {
+            const recoveredRoot = postcss.parse(lines.join('\n'));
+            root.append(recoveredRoot);
+          } catch {
+            // Skip unparseable CSS file gracefully
+          }
+        }
+      } catch {}
+    }
+  }
 
   root.walkRules((rule) => {
     // Strip platform watermark/badge CSS rules

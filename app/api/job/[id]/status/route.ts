@@ -60,5 +60,17 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  return NextResponse.json(toPublicJob(job));
+  const publicData = toPublicJob(job);
+
+  try {
+    const approval = await getApprovalState(id);
+    if (approval) {
+      publicData.paymentSubmitted = approval.paymentSubmitted;
+      publicData.paymentApproved = approval.paymentApproved;
+    }
+  } catch (approvalErr) {
+    console.warn('[Status Route] Local Firestore approval check skipped:', approvalErr);
+  }
+
+  return NextResponse.json(publicData);
 }

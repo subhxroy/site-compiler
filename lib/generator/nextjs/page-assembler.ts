@@ -1,9 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import prettier from 'prettier';
-import { generateComponentFromSection, sanitizeComponentName, GeneratedComponent } from '../react/jsx-builder';
+import * as cheerio from 'cheerio';
+import { generateComponentFromSection, sanitizeComponentName, convertStyleStringToJsxObject, GeneratedComponent } from '../react/jsx-builder';
 import { DetectedSection } from '../../detector/section-detector';
 import { ExtractedMeta } from '../../crawler/types';
+
 
 export interface NextJsBuildOptions {
   jobId: string;
@@ -36,8 +38,12 @@ export async function buildNextJsExport(options: NextJsBuildOptions): Promise<Ne
     fs.cpSync(rawAssetsDir, path.join(publicDir, 'assets'), { recursive: true });
   }
 
-  // 2. Read HTML for section generation
-  const rawHtml = fs.readFileSync(path.join(rawDir, 'page.html'), 'utf-8');
+  // 2. Read HTML for section generation (prefer cleaned & processed html-export index.html)
+  const htmlExportDir = path.join(exportsDir, 'output', 'html-export');
+  const indexHtmlPath = path.join(htmlExportDir, 'index.html');
+  const rawHtml = fs.existsSync(indexHtmlPath)
+    ? fs.readFileSync(indexHtmlPath, 'utf-8')
+    : fs.readFileSync(path.join(rawDir, 'page.html'), 'utf-8');
 
   // 3. Read Metadata
   let meta: ExtractedMeta = { title: 'Exported Site', canonicalUrl: null, metaTags: [], jsonLd: [] };
@@ -45,6 +51,14 @@ export async function buildNextJsExport(options: NextJsBuildOptions): Promise<Ne
   if (fs.existsSync(metaPath)) {
     meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
   }
+
+  // 3b. Read consolidated CSS so animation detection (keyframes, transitions)
+  // has something to inspect — previously this was never threaded through,
+  // so detectAnimationPatterns() (when later wired in) would always see ''.
+  const consolidatedCssPathForAnim = path.join(exportsDir, 'output', 'html-export', 'styles.css');
+  const cssContentForAnim = fs.existsSync(consolidatedCssPathForAnim)
+    ? fs.readFileSync(consolidatedCssPathForAnim, 'utf-8')
+    : '';
 
   // 4. Generate Section TSX Components with unique component names
   const generatedComponents: GeneratedComponent[] = [];
@@ -60,19 +74,40 @@ export async function buildNextJsExport(options: NextJsBuildOptions): Promise<Ne
       baseName = `${baseName}${nameCounts[baseName]}`;
     }
 
-    const comp = await generateComponentFromSection(section, index++, rawHtml, baseName);
+    const comp = await generateComponentFromSection(section, index++, rawHtml, baseName, cssContentForAnim);
     const destPath = path.join(outputDir, comp.filePath);
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     fs.writeFileSync(destPath, comp.code, 'utf-8');
     generatedComponents.push(comp);
   }
 
-  // 5. Generate app/page.tsx composing all section components
+  // 5. Generate app/page.tsx composing all section components within the measured root layout frame
   const imports = generatedComponents
     .map((c) => `import ${c.componentName} from '@/components/${c.componentName}';`)
     .join('\n');
 
-  const componentTags = generatedComponents.map((c) => `      <${c.componentName} />`).join('\n');
+  const componentTags = generatedComponents.map((c) => `        <${c.componentName} />`).join('\n');
+
+  // Extract root layout container attributes from rawHtml (e.g. #main, root classes, inline styles)
+  const $ = cheerio.load(rawHtml);
+  const mainWrapper = $('#main').first();
+  const rootWrapper = mainWrapper.length > 0 ? mainWrapper : $('body > div').first();
+
+  let rootIdAttr = '';
+  let rootClassAttr = 'min-h-screen';
+  let rootStyleAttr = '';
+
+  if (rootWrapper.length > 0) {
+    const rId = rootWrapper.attr('id');
+    const rClass = rootWrapper.attr('class');
+    const rStyle = rootWrapper.attr('style');
+
+    if (rId) rootIdAttr = ` id="${rId}"`;
+    if (rClass) rootClassAttr = `${rClass} min-h-screen`;
+    if (rStyle) {
+      rootStyleAttr = ` style={${convertStyleStringToJsxObject(rStyle)}}`;
+    }
+  }
 
   let pageCode = `
 import React from 'react';
@@ -80,7 +115,7 @@ ${imports}
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen">
+    <main${rootIdAttr} className="${rootClassAttr}"${rootStyleAttr}>
 ${componentTags}
     </main>
   );
@@ -93,6 +128,7 @@ ${componentTags}
 
   const pagePath = path.join(appDir, 'page.tsx');
   fs.writeFileSync(pagePath, pageCode, 'utf-8');
+
 
   // 6. Generate app/layout.tsx
   let layoutCode = `
@@ -128,7 +164,9 @@ export default function RootLayout({
   const consolidatedCssPath = path.join(exportsDir, 'output', 'html-export', 'styles.css');
   let globalsCss = '@import "tailwindcss";\n';
   if (fs.existsSync(consolidatedCssPath)) {
-    globalsCss += fs.readFileSync(consolidatedCssPath, 'utf-8');
+    const rawCss = fs.readFileSync(consolidatedCssPath, 'utf-8');
+    // Rewrite ./assets/ to /assets/ for Next.js public/ asset resolution
+    globalsCss += rawCss.replace(/\.\/assets\//g, '/assets/');
   }
   fs.writeFileSync(path.join(appDir, 'globals.css'), globalsCss, 'utf-8');
 
@@ -147,6 +185,7 @@ export default function RootLayout({
       next: '^16.3.0',
       react: '^19.2.0',
       'react-dom': '^19.2.0',
+      'framer-motion': '^11.0.0',
     },
     devDependencies: {
       '@tailwindcss/postcss': '^4.0.0',
@@ -211,6 +250,42 @@ export default nextConfig;
     exclude: ['node_modules'],
   };
   fs.writeFileSync(path.join(outputDir, 'tsconfig.json'), JSON.stringify(tsConfig, null, 2), 'utf-8');
+
+  // 10. Write developer-friendly README.md
+  const readmeContent = `# ${meta.title || 'Exported Website'} — Next.js Edition
+
+Clean, modern Next.js 16 + React App Router project reconstructed with **SiteCompiler**.
+
+## 📁 Component Directory
+
+All UI sections have been decomposed into clean, modular React components:
+
+${generatedComponents.map((c) => `- \`components/${c.componentName}.tsx\` — ${c.componentName} section markup, text, and styles.`).join('\n')}
+
+## 🚀 Getting Started
+
+1. **Install Dependencies**:
+   \`\`\`bash
+   npm install
+   \`\`\`
+
+2. **Run Local Development Server**:
+   \`\`\`bash
+   npm run dev
+   \`\`\`
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+3. **Editing Content**:
+   - Open any component in \`components/\` to edit headlines, text, or links.
+   - Global styles and CSS variables are located in \`app/globals.css\`.
+   - Asset images and icons are located in \`public/assets/\`.
+
+## 🌐 Deployment
+
+- **Vercel**: Run \`npx vercel\`
+- **Netlify**: Run \`npx netlify deploy\`
+`;
+  fs.writeFileSync(path.join(outputDir, 'README.md'), readmeContent, 'utf-8');
 
   return {
     outputDir,

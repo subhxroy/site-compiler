@@ -326,6 +326,9 @@ export function cleanDom(
     }
   });
 
+  // 9. Simplify nested <span> wrappers and collapse single-child Framer positioning divs for human-editable code
+  simplifyNestedSpansAndWrappers($);
+
   const title = $('title').first().text().trim() || 'Exported Website';
 
   return {
@@ -333,4 +336,41 @@ export function cleanDom(
     $,
     title,
   };
+}
+
+export function simplifyNestedSpansAndWrappers($: cheerio.CheerioAPI): void {
+  // 1. Remove Framer search index & redirect metadata tags from head
+  $('meta[name*="framer-search-index"], meta[data-redirect-timezone]').remove();
+
+  // 2. Collapse redundant <span><span><span>text</span></span></span> wrappers
+  for (let iter = 0; iter < 5; iter++) {
+    let unnestedAny = false;
+    $('span').each((_, el) => {
+      const $el = $(el);
+      const children = $el.children();
+      if (children.length === 1 && children[0].tagName?.toLowerCase() === 'span') {
+        const $child = $(children[0]);
+        const parentClass = $el.attr('class') || '';
+        const childClass = $child.attr('class') || '';
+        if (!parentClass || parentClass.includes('framer-text') || !childClass) {
+          $el.replaceWith($child);
+          unnestedAny = true;
+        }
+      }
+    });
+    if (!unnestedAny) break;
+  }
+
+  // 3. Unwrap single-child framer container wrappers (e.g. framer-bcxrl8-container)
+  $('div').each((_, el) => {
+    const $el = $(el);
+    const classAttr = $el.attr('class') || '';
+    const idAttr = $el.attr('id') || '';
+    const styleAttr = $el.attr('style') || '';
+    const children = $el.children();
+
+    if (!idAttr && children.length === 1 && /framer-[a-z0-9]+-container/i.test(classAttr) && (!styleAttr || styleAttr.length < 20)) {
+      $el.replaceWith($(children[0]));
+    }
+  });
 }

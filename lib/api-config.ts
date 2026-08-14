@@ -14,15 +14,12 @@
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.BACKEND_URL ||
-  (process.env.NODE_ENV === 'development' ? '' : 'https://site-compiler.onrender.com')
+  ''
 ).replace(/\/$/, '');
 
-// The Render backend URL exposed to the browser.
-// Used for export job creation only — bypasses Netlify's 10s serverless timeout.
-// In local dev this is empty, so calls fall through to the relative /api proxy.
 export const RENDER_BACKEND_URL = (
   process.env.NEXT_PUBLIC_RENDER_BACKEND_URL ||
-  (process.env.NODE_ENV === 'development' ? '' : 'https://site-compiler.onrender.com')
+  ''
 ).replace(/\/$/, '');
 
 export function getApiUrl(path: string): string {

@@ -42,6 +42,15 @@ export async function runPipelineTests(): Promise<{ name: string; passed: boolea
   assert('Idempotency store records and returns active job for valid key', foundJob?.id === activeJob.id);
   assert('Non-existent idempotency key returns undefined', getJobByIdempotencyKey('non-existent-key-1234') === undefined);
 
+  // Disk rehydration test for jobs created before server restart
+  const testRehydrateId = `job_${Date.now()}_rehydrate`;
+  const rehydrateDir = path.resolve(process.cwd(), 'exports', testRehydrateId);
+  fs.mkdirSync(rehydrateDir, { recursive: true });
+  fs.writeFileSync(path.join(rehydrateDir, `${testRehydrateId}.zip`), 'dummy-zip-content');
+  const diskJob = getJob(testRehydrateId);
+  assert('getJob rehydrates existing job from disk when not in memory', diskJob !== undefined && diskJob.id === testRehydrateId);
+  try { fs.rmSync(rehydrateDir, { recursive: true, force: true }); } catch {}
+
   // ── 3. Output Validation: Static HTML ──
   const tempTestDir = path.resolve(process.cwd(), 'exports', `test_pipeline_${Date.now()}`);
   const htmlOutputDir = path.join(tempTestDir, 'output', 'html-export');
