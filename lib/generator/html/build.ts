@@ -51,13 +51,11 @@ const CRITICAL_OVERRIDE_CSS = `
      The JS shim below handles animation-state transforms selectively. */
   [data-framer-appear-id]:not([data-framer-layout-hint-center-x]) {
     opacity: 1 !important;
-    filter: none !important;
     visibility: visible !important;
   }
   /* Center-hinted elements: reveal opacity but preserve transform for centering */
   [data-framer-appear-id][data-framer-layout-hint-center-x] {
     opacity: 1 !important;
-    filter: none !important;
     visibility: visible !important;
   }
 
@@ -279,13 +277,15 @@ const ANIMATION_SHIM_JS = `
 
     function revealEl(el) {
       el.style.opacity = '1';
-      el.style.filter = 'none';
+      if (!el.matches('[data-framer-name*="Avatar"], [data-framer-name*="Avatar"] *')) {
+        el.style.filter = 'none';
+      }
       el.classList.add('aos-animate');
       el.setAttribute('data-sitecompiler-reveal', 'visible');
       // Only reset transform if it looks like an animation initial state,
       // NOT if it's a layout-critical transform (translate(-50%), scale for sizing, etc.)
       var s = el.getAttribute('style') || '';
-      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x')) {
+      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x') && !el.matches('[data-framer-name*="Avatar"], [data-framer-name*="Avatar"] *')) {
         el.style.transform = 'none';
       }
     }
@@ -481,19 +481,89 @@ const ANIMATION_SHIM_JS = `
     }, { passive: true });
   }
 
-  /* ── 10. Framer avatar scale on scroll ── */
+  /* ── 10. Framer avatar 60fps smooth grayscale-to-color & scale scroll engine ── */
   function initFramerAvatar() {
-    var back = document.querySelector('[data-framer-name="Avatar - Back"]');
-    var front = document.querySelector('[data-framer-name="Avatar - Front"]');
-    if (back) back.style.display = 'none';
-    if (front) {
-      front.style.transform = 'none';
-      front.style.opacity = '1';
-      window.addEventListener('scroll', function () {
-        var scale = Math.min(1, 0.5 + window.scrollY / 1000);
-        front.style.transform = 'scale(' + scale.toFixed(3) + ')';
-      }, { passive: true });
+    var backEls = Array.from(document.querySelectorAll('[data-framer-name="Avatar - Back"]'));
+    var frontEls = Array.from(document.querySelectorAll('[data-framer-name="Avatar - Front"]'));
+    var allAvatars = backEls.concat(frontEls);
+
+    if (!allAvatars.length) {
+      allAvatars = Array.from(document.querySelectorAll('[data-framer-name="Avatar Wrap"] img, [data-framer-name="Sticky Avatar Wrap"] img'));
     }
+    if (!allAvatars.length) return;
+
+    var currentY = -1;
+    var targetY = 0;
+    var ticking = false;
+
+    function onScroll() {
+      targetY = window.scrollY || window.pageYOffset || 0;
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(render);
+      }
+    }
+
+    function render() {
+      if (currentY === -1) {
+        currentY = targetY;
+      } else {
+        // Smooth lerp (linear interpolation with damping) for ultra-fluid 60fps animation
+        currentY += (targetY - currentY) * 0.14;
+      }
+
+      // Scroll progress from 0 (at top of page) to 1 (scrolled 380px)
+      var scrollDist = Math.max(0, currentY);
+      var progress = Math.min(1, scrollDist / 380);
+
+      // Smooth cubic ease-out curve
+      var ease = 1 - Math.pow(1 - progress, 2.5);
+
+      // 1. Grayscale & Contrast: 100% grayscale at top -> 0% (vibrant color & glow) as you scroll
+      var grayscaleVal = (1 - ease) * 100;
+      var contrastVal = 1 + (1 - ease) * 0.08;
+      var brightnessVal = 0.92 + ease * 0.08;
+      var filterStyle = grayscaleVal > 0.5
+        ? 'grayscale(' + grayscaleVal.toFixed(1) + '%) contrast(' + contrastVal.toFixed(2) + ') brightness(' + brightnessVal.toFixed(2) + ')'
+        : 'none';
+
+      // 2. Scale: starts at 0.75 and scales up smoothly to 1.0
+      var scaleVal = 0.75 + ease * 0.25;
+
+      frontEls.forEach(function (el) {
+        el.style.filter = filterStyle;
+        el.style.transform = 'perspective(1200px) scale(' + scaleVal.toFixed(4) + ')';
+        el.style.opacity = '1';
+        el.style.willChange = 'transform, filter';
+      });
+
+      backEls.forEach(function (el) {
+        el.style.filter = filterStyle;
+        el.style.transform = 'perspective(1200px) scale(' + scaleVal.toFixed(4) + ')';
+        el.style.opacity = '1';
+        el.style.willChange = 'transform, filter';
+      });
+
+      // Fallback for standalone avatar images
+      if (!frontEls.length && !backEls.length) {
+        allAvatars.forEach(function (el) {
+          el.style.filter = filterStyle;
+          el.style.transform = 'scale(' + scaleVal.toFixed(4) + ')';
+          el.style.willChange = 'transform, filter';
+        });
+      }
+
+      if (Math.abs(targetY - currentY) > 0.2) {
+        requestAnimationFrame(render);
+      } else {
+        currentY = targetY;
+        ticking = false;
+      }
+    }
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
   }
 
   /* ── 11. Marquee / infinite scroll text ── */
