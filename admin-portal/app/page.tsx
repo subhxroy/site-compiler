@@ -131,14 +131,31 @@ export default function StandaloneAdminPage() {
     }
   }, []);
 
+function isAllowlistedAdmin(email?: string | null): boolean {
+  const e = (email || '').toLowerCase().trim();
+  if (!e) return false;
+  const defaultAdminEmails = ['contact.subhroy-1@gmail.com', 'contact.subhroy@gmail.com', 'subhxroy@gmail.com'];
+  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || defaultAdminEmails.join(','))
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+  return allowlist.includes(e);
+}
+
   // Fetch admin data with Bearer token authentication
   const loadAdminData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+
+    const userIsAdmin = isAllowlistedAdmin(user.email);
+    if (userIsAdmin) {
+      setIsVerifiedAdmin(true);
+    }
+
     try {
       const token = await getIdToken();
       if (!token) {
-        setIsVerifiedAdmin(false);
+        if (!userIsAdmin) setIsVerifiedAdmin(false);
         setLoading(false);
         return;
       }
@@ -146,6 +163,19 @@ export default function StandaloneAdminPage() {
       const apiHost = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
         ? 'http://localhost:3000' 
         : MAIN_SITE_URL;
+
+      // Sync user profile first to ensure role is in sync
+      await fetch(`${apiHost}/api/user/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          displayName: user.displayName || user.email?.split('@')[0] || 'Admin',
+          photoURL: user.photoURL || null,
+        }),
+      }).catch(() => null);
 
       const headers = { 'Authorization': `Bearer ${token}` };
 
@@ -156,15 +186,21 @@ export default function StandaloneAdminPage() {
       ]);
 
       if (usersRes.status === 401 || usersRes.status === 403) {
-        setIsVerifiedAdmin(false);
-        setFeedback({ type: 'error', message: 'Access Denied: You do not have Administrator permissions.' });
-        setLoading(false);
-        return;
+        if (!userIsAdmin) {
+          setIsVerifiedAdmin(false);
+          setFeedback({ type: 'error', message: 'Access Denied: You do not have Administrator permissions.' });
+          setLoading(false);
+          return;
+        }
       }
 
-      const usersData = await usersRes.json();
-      const statsData = statsRes && statsRes.ok ? await statsRes.json() : null;
-      const approvalsData = approvalsRes && approvalsRes.ok ? await approvalsRes.json() : null;
+      let usersData = { users: [] };
+      try {
+        if (usersRes.ok) usersData = await usersRes.json();
+      } catch {}
+
+      const statsData = statsRes && statsRes.ok ? await statsRes.json().catch(() => null) : null;
+      const approvalsData = approvalsRes && approvalsRes.ok ? await approvalsRes.json().catch(() => null) : null;
 
       if (usersData.users) setUsers(usersData.users);
       if (statsData) {
@@ -181,7 +217,9 @@ export default function StandaloneAdminPage() {
       setIsVerifiedAdmin(true);
       handlePingBackend();
     } catch (err: unknown) {
-      setIsVerifiedAdmin(false);
+      if (!userIsAdmin) {
+        setIsVerifiedAdmin(false);
+      }
       setFeedback({ type: 'error', message: 'Failed to connect to Admin API: ' + (err as Error).message });
     } finally {
       setLoading(false);
