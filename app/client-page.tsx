@@ -275,19 +275,23 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
     const iv = setInterval(async () => {
       pollAttempt++;
-      // 1. Client-side timeout watchdog
+      // 1. Client-side timeout watchdog (only for actively compiling unfinished jobs)
       if (Date.now() - startTime > MAX_JOB_DURATION_MS) {
-        console.warn(`[POLL DEBUG] Job ${jobId} hit 5-minute client watchdog timeout`);
-        setJob((prev) =>
-          prev
+        setJob((prev) => {
+          // If job already completed successfully, never override it with a failure
+          if (prev && (prev.status === 'completed' || TERMINAL_STATUSES.includes(prev.status))) {
+            return prev;
+          }
+          console.warn(`[POLL DEBUG] Unfinished job ${jobId} hit 5-minute client watchdog timeout`);
+          return prev
             ? {
                 ...prev,
                 status: 'failed',
                 error: 'Export process timed out. The backend engine or target site took too long to respond.',
                 progressMessage: 'Export process timed out after 5 minutes.',
               }
-            : null
-        );
+            : null;
+        });
         setLoading(false);
         localStorage.removeItem('sitecompiler_active_job_id');
         clearInterval(iv);
