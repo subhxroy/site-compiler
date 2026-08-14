@@ -67,7 +67,9 @@ export async function GET(
     return new NextResponse(svg, {
       headers: {
         'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'public, max-age=300',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
       },
     });
   }
@@ -76,7 +78,7 @@ export async function GET(
   return new NextResponse(imageBuffer, {
     headers: {
       'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=60, stale-while-revalidate=120',
     },
   });
 }
