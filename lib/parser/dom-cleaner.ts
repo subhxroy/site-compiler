@@ -362,6 +362,12 @@ export function simplifyNestedSpansAndWrappers($: cheerio.CheerioAPI): void {
   }
 
   // 3. Unwrap single-child framer container wrappers (e.g. framer-bcxrl8-container)
+  // IMPORTANT: Only unwrap containers with NO style attribute at all.
+  // Framer container divs frequently carry visual compositing properties in their
+  // inline style (mix-blend-mode, filter, perspective, isolation, overflow, z-index)
+  // that produce decorative effects (gradient glows, blend modes on images, etc.).
+  // Unwrapping these destroys the visual layer structure. We are conservative here
+  // and only collapse truly empty positional containers (no id, no style, 1 child).
   $('div').each((_, el) => {
     const $el = $(el);
     const classAttr = $el.attr('class') || '';
@@ -369,7 +375,9 @@ export function simplifyNestedSpansAndWrappers($: cheerio.CheerioAPI): void {
     const styleAttr = $el.attr('style') || '';
     const children = $el.children();
 
-    if (!idAttr && children.length === 1 && /framer-[a-z0-9]+-container/i.test(classAttr) && (!styleAttr || styleAttr.length < 20)) {
+    // Only unwrap if: matches framer container pattern, has exactly 1 child,
+    // no id, and absolutely no style attribute (not even an empty one)
+    if (!idAttr && !styleAttr && children.length === 1 && /framer-[a-z0-9]+-container/i.test(classAttr)) {
       $el.replaceWith($(children[0]));
     }
   });

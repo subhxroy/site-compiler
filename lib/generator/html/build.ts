@@ -22,13 +22,12 @@ export interface BuildHtmlResult {
   pageCount: number;
 }
 
-const FRAMER_FONT_CSS = `
-  <link rel="preconnect" href="https://api.fontshare.com">
-  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=archivo@400,500,600,700&display=swap">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-`;
+// NOTE: Framer sites embed exact @font-face rules (Inter, Archivo, Clash Grotesk, etc.) in an
+// inline <style data-framer-font-css> block that the crawler captures verbatim inside the raw HTML.
+// We deliberately do NOT inject any generic Google Fonts / fontshare fallback links — doing so
+// would load wrong URL formats, wrong weight subsets, and would miss fonts like "Clash Grotesk"
+// that are not available on public CDNs at all. The inline block is already preserved as-is.
+// const FRAMER_FONT_CSS = ''; // intentionally removed
 
 // ────────────────────────────────────────────────────────────────────────────
 // CRITICAL OVERRIDE CSS — minimal, surgical, and non-destructive.
@@ -43,14 +42,15 @@ const CRITICAL_OVERRIDE_CSS = `
   /* Prevent horizontal overflow while preserving fixed/sticky elements */
   html, body { overflow-x: clip !important; }
 
-  /* ── Framer appear-animation: reveal hidden initial states ── */
-  /* These are SSR placeholder states that Framer Motion animates away.
-     Without the React runtime they stay hidden. We reveal them statically.
-     IMPORTANT: Exclude center-hinted elements — they need their translateX(-50%)
-     preserved for correct navbar centering. */
+  /* ── Framer appear-animation: reveal hidden initial states ──
+     IMPORTANT: We ONLY reveal opacity/visibility/filter here.
+     We deliberately do NOT reset transform, because Framer uses transform
+     for both animations AND layout positioning (e.g. translate(-50%,-50%) for
+     centering, scale() for sizing hero images). Resetting transform blanket
+     breaks the layout of positioned elements (hero images overflow text, etc.).
+     The JS shim below handles animation-state transforms selectively. */
   [data-framer-appear-id]:not([data-framer-layout-hint-center-x]) {
     opacity: 1 !important;
-    transform: none !important;
     filter: none !important;
     visibility: visible !important;
   }
@@ -85,10 +85,11 @@ const CRITICAL_OVERRIDE_CSS = `
   }
 
   /* ── Framer word-by-word text reveal (opacity: 0.001 start state) ── */
+  /* Only reset opacity, not transform — the word may have a translateY for slide-in
+     that will be handled by the IntersectionObserver shim */
   span[style*="opacity: 0.001"],
   span[style*="opacity:0.001"] {
     opacity: 1 !important;
-    transform: none !important;
     filter: none !important;
   }
 
@@ -168,17 +169,48 @@ const ANIMATION_SHIM_JS = `
   'use strict';
 
   /* ── 1. Responsive breakpoint classes (Framer SSR) ── */
+  // Read breakpoint hashes dynamically from the Framer-generated CSS block.
+  // Framer embeds `@media(min-width: 1280px){.hidden-HASH{display:none!important}}`
+  // in a <style data-framer-breakpoint-css> tag. We parse those hashes at runtime
+  // so the shim stays correct across Framer republishes (hashes change per build).
+  var _framerBreakpointHashes = null;
+  function getFramerHashes() {
+    if (_framerBreakpointHashes) return _framerBreakpointHashes;
+    var bpStyle = document.querySelector('style[data-framer-breakpoint-css]');
+    var desktopHash = '', tabletHash = '', mobileHash = '';
+    if (bpStyle && bpStyle.textContent) {
+      var txt = bpStyle.textContent;
+      // Desktop: min-width: 1280px
+      var dm = txt.match(/@media\s*\(\s*min-width:\s*1280px\s*\)\s*\{\s*\.hidden-([a-z0-9]+)/);
+      if (dm) desktopHash = dm[1];
+      // Tablet: min-width 810px and max-width 1279px
+      var tm = txt.match(/@media\s*\(\s*min-width:\s*810px\s*\)[^{]*\{\s*\.hidden-([a-z0-9]+)/);
+      if (tm) tabletHash = tm[1];
+      // Mobile: max-width 809px
+      var mm = txt.match(/@media\s*\(\s*max-width:\s*809\.?\d*px\s*\)\s*\{\s*\.hidden-([a-z0-9]+)/);
+      if (mm) mobileHash = mm[1];
+    }
+    // Fallbacks to known defaults if CSS block not found
+    _framerBreakpointHashes = {
+      desktop: desktopHash || '1y5deqo',
+      tablet:  tabletHash  || '1gqtqv1',
+      mobile:  mobileHash  || 'eh3b30'
+    };
+    return _framerBreakpointHashes;
+  }
+
   function applyBreakpoints() {
     var w = window.innerWidth;
-    // Framer uses hash-based hidden class variants
-    var framerHash = w >= 1280 ? '1y5deqo' : w >= 810 ? '1gqtqv1' : 'eh3b30';
+    var hashes = getFramerHashes();
+    // Active hash = the breakpoint the current viewport falls into
+    var activeHash = w >= 1280 ? hashes.desktop : w >= 810 ? hashes.tablet : hashes.mobile;
     document.querySelectorAll('[class*="hidden-"]').forEach(function (el) {
-      el.style.display = el.className.includes('hidden-' + framerHash) ? 'none' : '';
+      el.style.display = el.className.includes('hidden-' + activeHash) ? 'none' : '';
     });
     document.querySelectorAll('.ssr-variant').forEach(function (el) {
       // Don't hide ssr-variant wrappers that contain fixed navbars
       if (el.querySelector('[data-framer-layout-hint-center-x]')) return;
-      el.style.display = el.classList.contains('hidden-' + framerHash) ? 'none' : '';
+      el.style.display = el.classList.contains('hidden-' + activeHash) ? 'none' : '';
     });
 
     // Webflow responsive show/hide
@@ -195,6 +227,18 @@ const ANIMATION_SHIM_JS = `
   }
 
   /* ── 2. Universal Scroll-Reveal (IntersectionObserver) ── */
+  // Determines if an element's transform is an animation initial state vs a layout transform.
+  // Framer animation initial states are typically translateY(N px) with N > 0, or scale(< 1)
+  // combined with opacity: 0. Layout transforms (translate(-50%,-50%), etc.) are preserved.
+  function isAnimationTransform(style) {
+    if (!style) return false;
+    // Pure translateY offset (slide-in animation state)
+    if (/translateY\(([1-9]|[1-9]\d)px\)/.test(style)) return true;
+    // opacity near 0 + any transform = animation initial state
+    if (/opacity:\s*0(\.0+)?[;\s"']/.test(style) && /transform:/.test(style)) return true;
+    return false;
+  }
+
   function initScrollReveal() {
     var TRANSITION = 'opacity 0.65s cubic-bezier(0.23,1,0.32,1), transform 0.65s cubic-bezier(0.23,1,0.32,1), filter 0.65s ease';
     var elements = [];
@@ -220,14 +264,12 @@ const ANIMATION_SHIM_JS = `
       }
     });
 
-    // Also reveal inline-style translateY initial states (Framer pattern)
-    // But skip center-hinted elements (navbars)
+    // Also include inline-style animation initial states (translateY + opacity:0 pattern)
+    // But skip center-hinted elements (navbars) and layout-positioned elements
     document.querySelectorAll('[style]').forEach(function (el) {
       if (el.getAttribute('data-framer-layout-hint-center-x')) return;
       var s = el.getAttribute('style') || '';
-      if ((s.includes('translateY(20px)') || s.includes('translateY(10px)') ||
-           s.includes('translateY(40px)') || s.includes('translateY(30px)') ||
-           s.includes('translateY(60px)')) && !seen.has(el)) {
+      if (isAnimationTransform(s) && !seen.has(el)) {
         seen.add(el);
         elements.push(el);
       }
@@ -235,15 +277,21 @@ const ANIMATION_SHIM_JS = `
 
     if (!elements.length) return;
 
+    function revealEl(el) {
+      el.style.opacity = '1';
+      el.style.filter = 'none';
+      el.classList.add('aos-animate');
+      el.setAttribute('data-sitecompiler-reveal', 'visible');
+      // Only reset transform if it looks like an animation initial state,
+      // NOT if it's a layout-critical transform (translate(-50%), scale for sizing, etc.)
+      var s = el.getAttribute('style') || '';
+      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x')) {
+        el.style.transform = 'none';
+      }
+    }
+
     if (!('IntersectionObserver' in window)) {
-      elements.forEach(function (el) {
-        el.style.opacity = '1';
-        if (!el.getAttribute('data-framer-layout-hint-center-x')) {
-          el.style.transform = 'none';
-        }
-        el.style.filter = 'none';
-        el.classList.add('aos-animate');
-      });
+      elements.forEach(revealEl);
       return;
     }
 
@@ -252,13 +300,7 @@ const ANIMATION_SHIM_JS = `
         if (entry.isIntersecting) {
           var el = entry.target;
           el.style.transition = TRANSITION;
-          el.style.opacity = '1';
-          if (!el.getAttribute('data-framer-layout-hint-center-x')) {
-            el.style.transform = 'none';
-          }
-          el.style.filter = 'none';
-          el.classList.add('aos-animate');
-          el.setAttribute('data-sitecompiler-reveal', 'visible');
+          revealEl(el);
           io.unobserve(el);
         }
       });
@@ -270,11 +312,7 @@ const ANIMATION_SHIM_JS = `
         io.observe(el);
       } else {
         // Already visible — show immediately
-        el.style.opacity = '1';
-        if (!el.getAttribute('data-framer-layout-hint-center-x')) {
-          el.style.transform = 'none';
-        }
-        el.classList.add('aos-animate');
+        revealEl(el);
       }
     });
   }
@@ -604,7 +642,8 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     $('img[src*="google-analytics"]').remove();
 
     // ── Inject fonts, critical CSS, and consolidated styles ──
-    $('head').append(FRAMER_FONT_CSS);
+    // Note: Framer font @font-face rules are already embedded in the
+    // captured inline <style data-framer-font-css> block — no injection needed.
     $('head').append(CRITICAL_OVERRIDE_CSS);
     $('head').append('  <link rel="stylesheet" href="./styles.css">\n');
 
