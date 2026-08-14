@@ -756,9 +756,18 @@ export default function AdminPortalPage() {
                     filteredUsers.map((u) => (
                       <tr key={u.uid} className="hover:bg-[#111214]/60 transition-colors">
                         <td className="px-6 py-4 flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#1b1c1e] border border-[#2f3031] flex items-center justify-center font-bold text-white text-xs flex-none">
-                            {(u.displayName || u.email || 'U').charAt(0).toUpperCase()}
-                          </div>
+                          {u.photoURL ? (
+                            <img
+                              src={u.photoURL}
+                              alt="Avatar"
+                              referrerPolicy="no-referrer"
+                              className="w-8 h-8 rounded-full object-cover border border-[#2f3031] flex-none"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-[#1b1c1e] border border-[#2f3031] flex items-center justify-center font-bold text-white text-xs flex-none">
+                              {(u.displayName || u.email || 'U').charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <div>
                             <div className="text-white font-medium">{u.displayName || 'User'}</div>
                             <div className="text-[11px] font-mono text-[#6a6b6c]">{u.email}</div>

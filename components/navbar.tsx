@@ -12,6 +12,12 @@ export function Navbar() {
 
   const [imgError, setImgError] = useState(false);
 
+  const avatarUrl = user?.photoURL || user?.providerData?.[0]?.photoURL || null;
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [avatarUrl, user?.uid]);
+
   return (
     <>
       <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-[960px]">
@@ -52,10 +58,11 @@ export function Navbar() {
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
                   className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#1b1c1e] border border-[#363739] hover:border-[#ff6363]/50 transition-all cursor-pointer"
                 >
-                  {user.photoURL && !imgError ? (
+                  {avatarUrl && !imgError ? (
                     <img
-                      src={user.photoURL}
+                      src={avatarUrl}
                       alt="Avatar"
+                      referrerPolicy="no-referrer"
                       className="w-5 h-5 rounded-full object-cover"
                       onError={() => setImgError(true)}
                     />
@@ -70,10 +77,25 @@ export function Navbar() {
                 </button>
 
                 {isMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 py-2 bg-[#07080a] border border-[#363739] rounded-[12px] shadow-2xl space-y-1 text-xs z-50 raycast-key-card">
-                    <div className="px-3 py-1.5 border-b border-[#1b1c1e]">
-                      <div className="text-white font-medium truncate">{user.displayName || 'User'}</div>
-                      <div className="text-[10px] text-[#6a6b6c] truncate">{user.email}</div>
+                  <div className="absolute right-0 mt-2 w-52 py-2 bg-[#07080a] border border-[#363739] rounded-[12px] shadow-2xl space-y-1 text-xs z-50 raycast-key-card">
+                    <div className="flex items-center gap-2.5 px-3 py-2 border-b border-[#1b1c1e]">
+                      {avatarUrl && !imgError ? (
+                        <img
+                          src={avatarUrl}
+                          alt="Avatar"
+                          referrerPolicy="no-referrer"
+                          className="w-8 h-8 rounded-full object-cover border border-[#363739]"
+                          onError={() => setImgError(true)}
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#ff6363] to-[#ff8c42] text-[#07080a] text-xs font-bold flex items-center justify-center shadow-inner shrink-0">
+                          {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="overflow-hidden">
+                        <div className="text-white font-medium truncate">{user.displayName || 'User'}</div>
+                        <div className="text-[10px] text-[#6a6b6c] truncate">{user.email}</div>
+                      </div>
                     </div>
                     <Link
                       href="/history"

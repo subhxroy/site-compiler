@@ -749,9 +749,18 @@ export default function StandaloneAdminPage() {
                     <tr key={u.uid} className="hover:bg-[#121418] transition-colors">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#1e2025] border border-[#2f3031] flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
-                            {u.displayName ? u.displayName.charAt(0) : u.email.charAt(0)}
-                          </div>
+                          {u.photoURL ? (
+                            <img
+                              src={u.photoURL}
+                              alt="Avatar"
+                              referrerPolicy="no-referrer"
+                              className="w-8 h-8 rounded-full object-cover border border-[#2f3031] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-[#1e2025] border border-[#2f3031] flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
+                              {u.displayName ? u.displayName.charAt(0) : u.email.charAt(0)}
+                            </div>
+                          )}
                           <div className="truncate">
                             <div className="text-white font-medium truncate">{u.displayName || u.email}</div>
                             <div className="text-[10px] text-[#6a6b6c] truncate">{u.email}</div>
