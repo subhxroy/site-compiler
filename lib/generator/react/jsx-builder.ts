@@ -1,4 +1,3 @@
-import { Project } from 'ts-morph';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import prettier from 'prettier';
@@ -197,10 +196,7 @@ export async function generateComponentFromSection(
   cssContent: string = ''
 ): Promise<GeneratedComponent> {
   const componentName = componentNameOverride || sanitizeComponentName(section.name, sectionIndex);
-  const project = new Project({ useInMemoryFileSystem: true });
-
   const fileName = `${componentName}.tsx`;
-  const sourceFile = project.createSourceFile(fileName, '', { overwrite: true });
 
   // IMPORTANT: use the section's pre-resolved, verified htmlContent (frozen
   // at detection time against the exact HTML the detector looked at) rather

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { getApiUrl } from '@/lib/api-config';
+import { getApiUrl, getDirectBackendUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { Zap, Smartphone, X, ShieldCheck, Check, Copy } from 'lucide-react';
 
@@ -70,34 +70,41 @@ export function PaywallModal({
         userEmail,
       };
 
-      // 1. Submit directly to authoritative Render backend
-      const renderBackendUrl = process.env.NEXT_PUBLIC_RENDER_BACKEND_URL || 'https://site-compiler.onrender.com';
-      const directUrl = `${renderBackendUrl.replace(/\/$/, '')}/api/job/${jobId}/payment`;
+      // 1. Submit to authoritative Render / local backend
+      const directUrl = getDirectBackendUrl(`/api/job/${jobId}/payment`);
+      let success = false;
 
-      const res = await fetch(directUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => null);
+      try {
+        const res = await fetch(directUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          success = true;
+        }
+      } catch {}
 
-      // 2. Also record in Firestore via Netlify background route (optional)
-      fetch(getApiUrl('/api/export/payment'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {});
+      // 2. Also record in Firestore via Netlify route
+      try {
+        const netlifyRes = await fetch(getApiUrl('/api/export/payment'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (netlifyRes.ok) {
+          success = true;
+        }
+      } catch {}
 
-      if (res && res.ok) {
+      if (success) {
         onPaymentSubmitted();
         onClose();
       } else {
-        // Fallback: If Render backend responded or was unreachable, consider payment submitted
-        onPaymentSubmitted();
-        onClose();
+        setError('Payment submission could not be verified by the server. Please check your internet connection and try again.');
       }
     } catch {
-      onPaymentSubmitted();
-      onClose();
+      setError('An unexpected error occurred while submitting your payment. Please try again.');
     } finally {
       setSubmitting(false);
     }

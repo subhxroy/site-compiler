@@ -10,13 +10,10 @@ export function Navbar() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const [imgError, setImgError] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
   const avatarUrl = user?.photoURL || user?.providerData?.[0]?.photoURL || null;
-
-  React.useEffect(() => {
-    setImgError(false);
-  }, [avatarUrl, user?.uid]);
+  const hasImgError = !!avatarUrl && failedAvatarUrl === avatarUrl;
 
   return (
     <>
@@ -58,13 +55,14 @@ export function Navbar() {
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
                   className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#1b1c1e] border border-[#363739] hover:border-[#ff6363]/50 transition-all cursor-pointer"
                 >
-                  {avatarUrl && !imgError ? (
+                  {avatarUrl && !hasImgError ? (
                     <img
+                      key={avatarUrl}
                       src={avatarUrl}
                       alt="Avatar"
                       referrerPolicy="no-referrer"
                       className="w-5 h-5 rounded-full object-cover"
-                      onError={() => setImgError(true)}
+                      onError={() => setFailedAvatarUrl(avatarUrl)}
                     />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#ff6363] to-[#ff8c42] text-[#07080a] text-[10px] font-bold flex items-center justify-center shadow-inner">
@@ -79,13 +77,14 @@ export function Navbar() {
                 {isMenuOpen && (
                   <div className="absolute right-0 mt-2 w-52 py-2 bg-[#07080a] border border-[#363739] rounded-[12px] shadow-2xl space-y-1 text-xs z-50 raycast-key-card">
                     <div className="flex items-center gap-2.5 px-3 py-2 border-b border-[#1b1c1e]">
-                      {avatarUrl && !imgError ? (
+                      {avatarUrl && !hasImgError ? (
                         <img
+                          key={avatarUrl}
                           src={avatarUrl}
                           alt="Avatar"
                           referrerPolicy="no-referrer"
                           className="w-8 h-8 rounded-full object-cover border border-[#363739]"
-                          onError={() => setImgError(true)}
+                          onError={() => setFailedAvatarUrl(avatarUrl)}
                         />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#ff6363] to-[#ff8c42] text-[#07080a] text-xs font-bold flex items-center justify-center shadow-inner shrink-0">

@@ -110,9 +110,9 @@ codify/
 
 ### `firebase.json` + `firestore.rules`
 - Firestore project config + rules. **Real rules surface** (what client SDKs are allowed to touch):
-  - `users/{userId}` — owner read/write only (`request.auth.uid == userId`).
-  - `users/{userId}/exports/{exportId}` — owner read/write only (saved export history).
-  - **`exports/{exportId}` (top-level) — ANY authenticated user read/write.** This permissive global collection is the security-relevant gap: nothing server-side writes it, but a signed-in client could. Server SDK bypasses rules entirely (admin privileges), which is why `export_approvals`/`user_exports` still work for the API layer; the top-level `exports` rule matches nothing the API actually uses and should be tightened.
+  - `users/{userId}` — owner read/write only (`request.auth.uid == userId`). Writes cannot modify security roles (`role`, `isAdmin`, `canExport`).
+  - `users/{userId}/exports/{exportId}` — owner read/write only (saved user export history subcollection).
+  - **`exports/{exportId}` & `export_approvals/{jobId}` — `allow read, write: if false;` (locked from client SDKs entirely).** Only the backend server Admin SDK (`adminDb`) can read or write approvals and raw export records.
 
 ---
 
@@ -261,7 +261,7 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - POST. Verifies the Bearer ID token; **identity is derived from the token, never the body**. Upserts Firestore `users/{uid}` with displayName/photoURL. Computes `isAdmin`: exact email match against `ADMIN_EMAILS` env allowlist (e.g. `contact.subhroy@gmail.com`, `contact.subhroy-1@gmail.com`, `subhxroy@gmail.com`) or fallback owner matches. **The generic `'admin'` substring is excluded** to prevent `admin@attacker.com` privilege escalation. Rate 60/min.
 
 ### `api/user/exports/route.ts`
-- GET (list the caller's exports) / POST (save one). **IDOR-safe**: uid comes from the verified token; any `uid` in query/body is ignored. GET returns up to 50, newest first. POST upserts into `users/{uid}/exports`. Rate: **GET 60/min, POST 30/min**. (Note: `admin/stats` counts the top-level `user_exports` collection, which nothing writes — the real records live in the `users/{uid}/exports` subcollection, so that stat reads ~0.)
+- GET (list the caller's exports) / POST (save one). **IDOR-safe**: uid comes from the verified token; any `uid` in query/body is ignored. GET returns up to 50, newest first. POST upserts into `users/{uid}/exports`. Rate: **GET 60/min, POST 30/min**.
 
 ### `api/admin/users/route.ts`
 - GET: all Firestore users (mapped fields; `canExport` defaults true). POST: update `{ uid, canExport?, role?, status? }`. Admin-guarded via `verifyAdminRequest`.
@@ -270,7 +270,7 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - GET: `export_approvals` ordered by `createdAt` desc, limit 100. POST `{ jobId, action: approve|reject }` → writes Firestore doc `{ status, paymentApproved, reviewedAt, reviewedBy }` **and mirrors `paymentApproved` into the backend in-memory store** via `updateJob(jobId, { paymentApproved }, msg)`. On **approve**, best-effort **payment-triggered restart**: if the local job is `failed`/`cancelled`, it resets to `pending` and re-runs `processExportJob` so the paid download actually gets generated (local mode only; on Netlify the job lives on Render and restarts there). Admin-guarded.
 
 ### `api/admin/stats/route.ts`
-- GET. Counts Firestore `users` + `user_exports`, then live-fetches `${API_BASE_URL}/health` to report `backendStatus`/`backendUptime`/`backendMemory`/`backendUrl`. Admin-guarded.
+- GET. Counts Firestore registered `users` and queries saved exports across users via `collectionGroup('exports')` (with graceful fallback to `export_approvals`), then live-fetches `${API_BASE_URL}/health` to report `backendStatus`/`backendUptime`/`backendMemory`/`backendUrl`. Admin-guarded.
 
 ### SEO/feed routes (all set `Cache-Control: public, max-age=…, s-maxage=…`)
 - `robots.txt` — allow all, disallow `/api` + auth pages, sitemap link, `Host`.
@@ -357,7 +357,7 @@ Playwright crawler:
 - Downloads **stylesheets + assets** (fonts/images/video/icons) only — **scripts are never fetched** (`scriptPaths = []`). Writes `raw/page.html`, `raw/meta.json`, `raw/screenshots/*.png`, `raw/assets_manifest.json`.
 
 ### `lib/parser/dom-cleaner.ts`
-- `stripPlatformWatermarksFromDom` (called for every captured page): removes `#framer-badge`-family selectors, `.w-webflow-badge`, `.wix-badge`, `.wixAdWrapper`, `#wpadminbar`, framer-`__framer-cookies`-style elements, and `.sitecompiler-banner`. So exported code carries no "Made in X" editor traces. *(`WATERMARK_RE` / `BARE_POWERED_RE` regexes exist but are unreferenced — the selector list is the live mechanism.)*
+- `stripPlatformWatermarksFromDom` (called for every captured page): removes `#framer-badge`-family selectors, `.w-webflow-badge`, `.wix-badge`, `.wixAdWrapper`, `#wpadminbar`, framer-`__framer-cookies`-style elements, and `.sitecompiler-banner`. So exported code carries no "Made in X" editor traces.
 
 ### `lib/parser/css-parser.ts`
 - postcss-based. Consolidates every captured stylesheet into one `styles.css`. Dedupes identical declaration blocks via `rulesMap[declarationString]`. Rewrites `url(...)` references through `assetMap` to local relative paths. Resolves `baseUrl` for relative refs.
@@ -386,7 +386,7 @@ Playwright crawler:
   - `initCardHovers()`, `initMobileNav()`, `initStickyHeader()`, `initCounters()`, `initParallax()`, `initMarquee()`, `initLightbox()`.
 
 ### `lib/generator/react/jsx-builder.ts`
-- ts-morph. `sanitizeComponentName` (falls back to `Section{index}`). `convertCheerioElementToJsx`: HTML→JSX attribute map (class→className, for→htmlFor, autocomplete, etc.). Text braces `{`/`}` wrapped as `{'{'}`/`{'}'}` (JSX text can't hold raw braces; HTML entities print literally in JSX, so `&#123;` would be wrong) — single-pass callback, never chained replaces. Attribute values escape `"` as `\"`. Inline `style` → `convertStyleStringtoTailwind`; if conversion bails (unsafe value), the original `style` attribute is kept so styling is never silently lost.
+- `sanitizeComponentName` (falls back to `Section{index}`). `convertCheerioElementToJsx`: HTML→JSX attribute map (class→className, for→htmlFor, autocomplete, etc.). Text braces `{`/`}` wrapped as `{'{'}`/`{'}'}` (JSX text can't hold raw braces; HTML entities print literally in JSX, so `&#123;` would be wrong) — single-pass callback, never chained replaces. Attribute values escape `"` as `\"`. Inline `style` → `convertStyleStringtoTailwind`; if conversion bails (unsafe value), the original `style` attribute is kept so styling is never silently lost.
 
 ### `lib/generator/react/tailwind-mapper.ts`
 - `cssPropertyToTailwind`: maps color, background-color, display, flex-direction, align-items, etc. to Tailwind utilities or arbitrary values (`text-[#hex]`). All arbitrary-value output flows through `arbitraryValue()` — values with `url(`, quotes, control chars, or `;{}` return `null` so the caller falls back to the inline style instead of emitting a broken class. `convertStyleStringtoTailwind` returns `''` on the first unsafe declaration (keeps whole style intact).
@@ -413,7 +413,7 @@ Playwright crawler:
 - 'use client'. `AuthProvider`/`useAuth`. Exposes `user`, `loading`, `isAdmin`, `userRole`, sign-in/out methods, `saveUserExport`, `getUserExports`, `getIdToken`.
 - **2.5s safety timer** that force-clears `loading` if `onAuthStateChanged` never fires (prevents infinite spinner).
 - **`!auth` early bail** — when Firebase is unconfigured (see `config.ts`), the effect clears `loading` and returns without subscribing; sign-in/up methods throw a clear "set `NEXT_PUBLIC_FIREBASE_API_KEY`" error; `signOutUser` skips the Firebase call but still clears local admin state.
-- **Client-side admin fast-path**: `checkIsAdminEmail` matches the email against `NEXT_PUBLIC_ADMIN_EMAILS` (default `contact.subhroy-1@gmail.com,subhroy,whysaurjya`, substring match). **`isAdmin` = `data.isAdmin || data.role === 'admin' || clientIsAdmin` — OR semantics.** ⚠️ The client email-substring fast-path can override the server verdict: an email like `subhroy@attacker.com` is treated as admin **client-side even if the server sync says otherwise**. UI-level gating only; every privileged action re-verifies server-side (`verify-admin.ts`), but the download button's "you may download" hint can lie when this flips true.
+- **Server-authoritative admin synchronization**: On authentication, syncs with `/api/user/sync` passing the verified ID token. `isAdmin` and `userRole` are set exclusively based on server verification (matching `ADMIN_EMAILS` exact allowlist or Firestore user record), eliminating client-side spoofing vectors.
 - Error path filters `'closing'` (Firebase "Database is closing") silently.
 
 ### `admin.ts`
@@ -527,7 +527,7 @@ Playwright crawler:
 17. **Idempotency keys dedupe exports** — browser sends `x-idempotency-key` (`req_<ts>_<rand>`) on the export POST; the backend store maps it to the job (1h expiry) and returns the existing job for duplicate clicks, so the client's 3-attempt retry loop never spawns parallel crawls. CORS `allowedHeaders` must keep listing `x-idempotency-key`.
 18. **Watchdogs everywhere** — 2.5-min crawl watchdog (capture finalizes with captured pages), 5-min per-job watchdog (`EXPORT_JOB_TIMEOUT_MS` force-fails active jobs), 5-min client polling watchdog + 30-consecutive-error fail. A hung phase can't wedge the UI or leave a job `pending` forever.
 19. **`toPublicJob` redacts UTR** — public status payloads mask UTR numbers (`UTR: [redacted]`) and drop sender account / user email; jobId is unauthenticated, so PII must never ride the public shape.
-20. **Only ONE backend unlock path on download** — the `x-sitecompiler-admin-bypass` secret header. The advertised Bearer-Firebase-token branch is **dead code**: `adminAuth` is never imported in `server/index.ts`, the call throws, the catch fail-closes 403. The Netlify download route does the admin/approval check and passes the header through; direct-to-Render calls must supply the header themselves.
+20. **Two backend unlock paths on download** — `/api/job/:id/download` accepts either (a) the `x-sitecompiler-admin-bypass` secret header matching `ADMIN_BYPASS_SECRET` (sent by the Netlify proxy on approved jobs), or (b) a verified Firebase Admin ID Token via `Bearer` authorization (`adminAuth.verifyIdToken`) matching the `ADMIN_EMAILS` allowlist. Both are active and verified.
 21. **Framer Hero Avatar & Scroll Fidelity (v3.0)** — `initFramerAvatar()` runs a 60fps `requestAnimationFrame` Lerp scroll engine (`0.14` damping). The portrait starts in Black & White (`grayscale(100%) contrast(1.08) brightness(0.92)` at scale `0.75`) and smoothly dissolves into full vibrant color and expands to scale `1.0` as the user scrolls past the hero. `CRITICAL_OVERRIDE_CSS` removes blanket `filter: none !important` and `transform: none !important` to preserve 3D card flips and scroll filters.
 22. **Google CDN Avatar Referrer Policy** — Google profile image CDN (`lh3.googleusercontent.com`) returns 403 when requests send `localhost` referrers. All avatar `<img>` tags carry `referrerPolicy="no-referrer"` with fallback to user initials on error.
 23. **Client Polling Watchdog Timeout Guard** — The 5-minute client-side watchdog only fails active running jobs (`job.status !== 'completed'`). It never overrides an already-completed export awaiting review or previewing.

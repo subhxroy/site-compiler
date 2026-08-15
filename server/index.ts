@@ -1,4 +1,7 @@
-if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+import path from 'path';
+import fs from 'fs';
+
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync(path.resolve(process.cwd(), 'pw-browsers'))) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
 
@@ -177,7 +180,7 @@ app.get('/api/job/:id/download', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization || req.headers.Authorization;
     if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7).trim();
-      if (isFirebaseAdminConfigured && adminAuth) {
+      if (isFirebaseAdminConfigured() && adminAuth) {
         try {
           const decoded = await adminAuth.verifyIdToken(token);
           if (decoded && decoded.email) {

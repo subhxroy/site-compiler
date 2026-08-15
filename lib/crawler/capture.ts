@@ -9,8 +9,8 @@ import { stripPlatformWatermarks } from '../parser/dom-cleaner';
 import { sanitizeCssText } from '../parser/css-parser';
 import { stripAnsi } from '../jobs/store';
 
-// Set browser path to ./pw-browsers (project-relative, survives Render build→runtime)
-if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+// Set browser path to ./pw-browsers if present (Render build→runtime), otherwise use default system cache
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync(path.resolve(process.cwd(), 'pw-browsers'))) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = './pw-browsers';
 }
 
