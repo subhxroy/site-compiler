@@ -301,10 +301,16 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
 
   const exportHtmlPath = path.join(exportHtmlDir, 'index.html');
   if (fs.existsSync(exportHtmlPath)) {
+    let htmlContent = fs.readFileSync(exportHtmlPath, 'utf-8');
+    if (!htmlContent.includes('<base ') && htmlContent.includes('<head>')) {
+      htmlContent = htmlContent.replace('<head>', `<head>\n    <base href="/api/job/${id}/preview/">`);
+    } else if (!htmlContent.includes('<base ') && htmlContent.includes('<head ')) {
+      htmlContent = htmlContent.replace(/<head[^>]*>/, `$&\\n    <base href="/api/job/${id}/preview/">`);
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.sendFile(exportHtmlPath);
+    res.send(htmlContent);
     return;
   }
 

@@ -31,7 +31,13 @@ export async function GET(
 
   const exportHtmlPath = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export', 'index.html');
   if (fs.existsSync(exportHtmlPath)) {
-    const htmlContent = fs.readFileSync(exportHtmlPath, 'utf-8');
+    let htmlContent = fs.readFileSync(exportHtmlPath, 'utf-8');
+    if (!htmlContent.includes('<base ') && htmlContent.includes('<head>')) {
+      htmlContent = htmlContent.replace('<head>', `<head>\n    <base href="/api/job/${id}/preview/">`);
+    } else if (!htmlContent.includes('<base ') && htmlContent.includes('<head ')) {
+      htmlContent = htmlContent.replace(/<head[^>]*>/, `$&\\n    <base href="/api/job/${id}/preview/">`);
+    }
+
     return new NextResponse(htmlContent, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
