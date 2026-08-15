@@ -6,6 +6,7 @@ import { createJobZip } from '../zip/build-zip';
 import { getJob, isJobActive, updateJob, stripAnsi } from './store';
 import { validateHtmlOutput, validateNextOutput, validateZip } from './validate';
 import * as path from 'path';
+import * as fs from 'fs';
 
 function throwIfCancelled(jobId: string): void {
   if (!isJobActive(jobId)) {
@@ -168,6 +169,9 @@ export async function processExportJob(jobId: string): Promise<void> {
     const stat = statSync(zipPath);
     const zipSizeKb = Math.round(stat.size / 1024);
 
+    const siteModelPath = path.resolve(process.cwd(), 'exports', jobId, 'output', 'html-export', 'site-model.json');
+    const hasModel = fs.existsSync(siteModelPath);
+
     const pageCount = htmlResult.pageCount || (crawlResult.pages && crawlResult.pages.length) || 1;
     const amount = Math.max(500, Math.ceil(pageCount / 10) * 500);
 
@@ -182,6 +186,7 @@ export async function processExportJob(jobId: string): Promise<void> {
         pageCount,
         amount,
         paymentApproved: false,
+        hasModel,
       },
       `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
     );

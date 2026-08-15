@@ -199,7 +199,7 @@ function collectFiles(folder: string, base: string = ''): string[] {
   const out: string[] = [];
   for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
     const cleanName = entry.name.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (cleanName.includes('..')) continue;
+    if (cleanName.includes('..') || cleanName === '.sc-tagged') continue;
     const rel = base ? `${base}/${cleanName}` : cleanName;
     if (entry.isDirectory()) {
       out.push(...collectFiles(path.join(folder, entry.name), rel));
@@ -214,7 +214,7 @@ function addFolderToZip(zip: AdmZip, folderPath: string, zipBasePath: string = '
   for (const entry of fs.readdirSync(folderPath, { withFileTypes: true })) {
     const fullPath = path.join(folderPath, entry.name);
     const cleanName = entry.name.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (cleanName.includes('..')) continue;
+    if (cleanName.includes('..') || cleanName === '.sc-tagged') continue;
     const zipPath = zipBasePath ? `${zipBasePath}/${cleanName}` : cleanName;
     if (entry.isDirectory()) {
       addFolderToZip(zip, fullPath, zipPath);

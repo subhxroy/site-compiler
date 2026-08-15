@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { getDirectBackendUrl } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
@@ -950,16 +951,26 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                       <span className="w-2 h-2 rounded-full bg-[#59d499]" />
                       <span className="font-mono">Live Interactive Preview</span>
                     </div>
-                    <a
-                      href={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#9c9c9d] hover:text-white flex items-center gap-1 transition-colors"
-                      title="Open full screen in a new tab"
-                    >
-                      <span>Open in New Tab</span>
-                      <Icon.ExternalLink size={11} />
-                    </a>
+                    <div className="flex items-center gap-3">
+                      {job.format === 'html' && (
+                        <Link
+                          href={`/edit/${job.id}`}
+                          className="text-[11px] text-[#ff6363] hover:text-[#ff7a7a] flex items-center gap-1 bg-[#ff6363]/10 px-2 py-0.5 rounded border border-[#ff6363]/20 font-medium transition-colors"
+                        >
+                          <span>✏️ Edit Content</span>
+                        </Link>
+                      )}
+                      <a
+                        href={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#9c9c9d] hover:text-white flex items-center gap-1 transition-colors"
+                        title="Open full screen in a new tab"
+                      >
+                        <span>Open in New Tab</span>
+                        <Icon.ExternalLink size={11} />
+                      </a>
+                    </div>
                   </div>
                   <iframe
                     src={getDirectBackendUrl(`/api/job/${job.id}/preview`)}

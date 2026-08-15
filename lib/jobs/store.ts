@@ -36,6 +36,7 @@ export interface JobState {
   utrNumber?: string;
   paymentSubmittedAt?: number;
   userEmail?: string;
+  hasModel?: boolean;
   screenshots?: {
     desktop: string;
     tablet: string;
@@ -258,6 +259,8 @@ export function getJob(jobId: string): JobState | undefined {
         }
 
         const calculatedAmount = Math.max(500, Math.ceil(detectedPageCount / 10) * 500);
+        const outputModelPath = path.join(htmlExportDir, 'site-model.json');
+        const hasModel = fs.existsSync(outputModelPath);
 
         const restoredJob: JobState = {
           id: jobId,
@@ -274,6 +277,7 @@ export function getJob(jobId: string): JobState | undefined {
           amount: calculatedAmount,
           paymentSubmitted: false,
           paymentApproved: false,
+          hasModel,
           screenshots: {
             desktop: `/api/job/${jobId}/screenshot?type=desktop`,
             tablet: `/api/job/${jobId}/screenshot?type=tablet`,
@@ -314,6 +318,7 @@ export function toPublicJob(job: JobState) {
     fileCount: job.fileCount,
     pageCount: job.pageCount,
     amount: job.amount,
+    hasModel: job.hasModel,
     paymentSubmitted: job.paymentSubmitted,
     paymentApproved: job.paymentApproved,
     paymentSubmittedAt: job.paymentSubmittedAt,

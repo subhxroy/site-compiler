@@ -5,6 +5,8 @@ import { cleanDom } from '../../parser/dom-cleaner';
 import { parseAndConsolidateCss } from '../../parser/css-parser';
 import { processAssets } from '../../parser/asset-pipeline';
 import { PageCaptured } from '../../crawler/types';
+import { tagEditableNodes } from '../../model/node-tagger';
+import { extractSiteModel, type SiteModel } from '../../model/extract-model';
 
 export interface BuildHtmlOptions {
   jobId: string;
@@ -688,6 +690,10 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
 
   let primaryCleanedHtml = '';
   let primaryIndexHtmlPath = path.join(outputDir, 'index.html');
+  const scTaggedDir = path.join(outputDir, '.sc-tagged');
+  fs.mkdirSync(scTaggedDir, { recursive: true });
+
+  const aggregatedNodes: SiteModel['nodes'] = {};
 
   for (const pageItem of pagesToProcess) {
     // Support both pages-dir and legacy single-file raw paths
@@ -703,6 +709,16 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
 
     const rawHtml = fs.readFileSync(rawHtmlPath, 'utf-8');
     const { $ } = cleanDom(rawHtml, assetMap, baseUrl, pagesToProcess);
+
+    // ── Tag editable nodes with deterministic data-sc-id ──
+    tagEditableNodes($);
+
+    // Extract site model nodes for this page
+    const pageModel = extractSiteModel($);
+    Object.assign(aggregatedNodes, pageModel.nodes);
+
+    // Save immutable tagged raw page copy for point-patching
+    fs.writeFileSync(path.join(scTaggedDir, pageItem.htmlFilename), $.html(), 'utf-8');
 
     // ── Head cleanup ──
     // Remove only external stylesheets (we bundle them into styles.css)
@@ -740,6 +756,13 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
       primaryIndexHtmlPath = destPath;
     }
   }
+
+  // Write site-model.json at root of html-export
+  const siteModel: SiteModel = {
+    version: 1,
+    nodes: aggregatedNodes,
+  };
+  fs.writeFileSync(path.join(outputDir, 'site-model.json'), JSON.stringify(siteModel, null, 2), 'utf-8');
 
   return {
     outputDir,

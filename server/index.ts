@@ -8,12 +8,11 @@ if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync(path.resolve(process.
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
-import fs from 'fs';
 import { createJob, getJob, toPublicJob, cancelExportJob, updateJob, getJobByIdempotencyKey } from '../lib/jobs/store';
 import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrf } from '../lib/security/ssrf';
 import { adminAuth, isFirebaseAdminConfigured } from '../lib/firebase/admin';
+import { processJobPatches } from '../lib/model/patch-job';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -347,10 +346,19 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
   res.send(loadingHtml);
 });
 
+// Rate limiter for patch/edit requests (20 saves per minute per IP)
+const modelRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: 'Too many edit requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Also support relative asset lookups like /api/job/:id/styles.css or /api/job/:id/assets/...
 app.get('/api/job/:id/:file(*)', (req: Request, res: Response, next: NextFunction) => {
   const { id, file } = req.params;
-  if (['status', 'screenshot', 'preview', 'download', 'payment', 'cancel', 'restart'].includes(file)) {
+  if (['status', 'screenshot', 'preview', 'download', 'payment', 'cancel', 'restart', 'model'].includes(file)) {
     return next();
   }
   const exportHtmlDir = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export');
@@ -362,6 +370,57 @@ app.get('/api/job/:id/:file(*)', (req: Request, res: Response, next: NextFunctio
     return;
   }
   next();
+});
+
+// ── Site Model API Endpoints ──────────────────────────────────────────────────
+app.get('/api/job/:id/model', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const modelPath = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export', 'site-model.json');
+  if (!fs.existsSync(modelPath)) {
+    res.status(404).json({ error: 'Site model not found for this export' });
+    return;
+  }
+
+  try {
+    const raw = fs.readFileSync(modelPath, 'utf-8');
+    const siteModel = JSON.parse(raw);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json(siteModel);
+  } catch {
+    res.status(500).json({ error: 'Failed to read site model' });
+  }
+});
+
+app.post('/api/job/:id/model', modelRateLimit, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const { patches } = req.body || {};
+  if (!Array.isArray(patches)) {
+    res.status(400).json({ error: 'Patches must be an array' });
+    return;
+  }
+
+  try {
+    const result = await processJobPatches(id, patches);
+    if (!result.ok) {
+      res.status(400).json(result);
+      return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to apply patches';
+    res.status(500).json({ ok: false, error: msg });
+  }
 });
 
 // ── Job Payment Submission Endpoint ───────────────────────────────────────────

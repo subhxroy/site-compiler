@@ -152,6 +152,14 @@ export default function ExportHistoryPage() {
                   {rec.zipSizeKb && (
                     <span className="font-mono text-xs text-[#9c9c9d]">{rec.zipSizeKb} KB</span>
                   )}
+                  {rec.format === 'html' && (
+                    <Link
+                      href={`/edit/${rec.jobId}`}
+                      className="px-3 py-2 rounded-lg bg-[#1b1c1e] hover:bg-[#25272a] border border-[#2f3031] text-xs text-white flex items-center gap-1.5 transition-colors"
+                    >
+                      ✏️ Edit
+                    </Link>
+                  )}
                   <button
                     onClick={() => handleDownload(rec.jobId)}
                     disabled={downloadingJobId === rec.jobId}

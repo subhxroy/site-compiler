@@ -2,6 +2,7 @@ import { runSsrfTests } from './ssrf.test';
 import { runSecurityTests } from './security.test';
 import { runPipelineTests } from './pipeline.test';
 import { runCrawlerTests } from './crawler.test';
+import { runModelPatchTests } from './model-patch.test';
 
 async function runTestSuite() {
   console.log('\n======================================================');
@@ -17,6 +18,7 @@ async function runTestSuite() {
     { name: '2. Security, Auth & PII Protection', runner: runSecurityTests },
     { name: '3. Compiler Pipeline & Validation', runner: runPipelineTests },
     { name: '4. Crawler, DOM & CSS Consolidation', runner: runCrawlerTests },
+    { name: '5. Stable Node IDs & Patchable HTML Model', runner: runModelPatchTests },
   ];
 
   for (const suite of suites) {
