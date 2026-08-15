@@ -88,7 +88,6 @@ const CRITICAL_OVERRIDE_CSS = `
   span[style*="opacity: 0.001"],
   span[style*="opacity:0.001"] {
     opacity: 1 !important;
-    filter: none !important;
   }
 
   /* ── Universal site headers — WordPress / Webflow / Wix / Squarespace ── */
@@ -277,15 +276,17 @@ const ANIMATION_SHIM_JS = `
 
     function revealEl(el) {
       el.style.opacity = '1';
-      if (!el.matches('[data-framer-name*="Avatar"], [data-framer-name*="Avatar"] *')) {
-        el.style.filter = 'none';
+      var sFilter = el.style.filter || '';
+      if (/blur/.test(sFilter)) {
+        var cleanFilter = sFilter.replace(/blur\([^)]*\)/g, '').trim();
+        el.style.filter = cleanFilter || '';
       }
       el.classList.add('aos-animate');
       el.setAttribute('data-sitecompiler-reveal', 'visible');
       // Only reset transform if it looks like an animation initial state,
       // NOT if it's a layout-critical transform (translate(-50%), scale for sizing, etc.)
       var s = el.getAttribute('style') || '';
-      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x') && !el.matches('[data-framer-name*="Avatar"], [data-framer-name*="Avatar"] *')) {
+      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x') && !el.matches('[data-framer-name*="Avatar"], [data-framer-name*="avatar"], [data-framer-name*="Photo"], [data-framer-name*="Portrait"], [class*="avatar"]')) {
         el.style.transform = 'none';
       }
     }
@@ -483,14 +484,34 @@ const ANIMATION_SHIM_JS = `
 
   /* ── 10. Framer avatar 60fps smooth grayscale-to-color & scale scroll engine ── */
   function initFramerAvatar() {
-    var backEls = Array.from(document.querySelectorAll('[data-framer-name="Avatar - Back"]'));
-    var frontEls = Array.from(document.querySelectorAll('[data-framer-name="Avatar - Front"]'));
-    var allAvatars = backEls.concat(frontEls);
+    var avatarSelectors = [
+      '[data-framer-name="Avatar - Back"]',
+      '[data-framer-name="Avatar - Front"]',
+      '[data-framer-name*="Avatar Back"]',
+      '[data-framer-name*="Avatar Front"]',
+      '[data-framer-name="Avatar Wrap"] img',
+      '[data-framer-name="Sticky Avatar Wrap"] img',
+      '[data-framer-name*="Avatar"] img',
+      '[data-framer-name*="avatar"] img',
+      '[data-framer-name*="Hero"] img',
+      '[data-framer-name*="Portrait"] img',
+      '[data-framer-name*="Photo"] img',
+      '.framer-avatar',
+      '[class*="avatar"] img'
+    ];
 
-    if (!allAvatars.length) {
-      allAvatars = Array.from(document.querySelectorAll('[data-framer-name="Avatar Wrap"] img, [data-framer-name="Sticky Avatar Wrap"] img'));
-    }
-    if (!allAvatars.length) return;
+    var avatarNodes = [];
+    var seen = new Set();
+    avatarSelectors.forEach(function (sel) {
+      document.querySelectorAll(sel).forEach(function (node) {
+        if (!seen.has(node)) {
+          seen.add(node);
+          avatarNodes.push(node);
+        }
+      });
+    });
+
+    if (!avatarNodes.length) return;
 
     var currentY = -1;
     var targetY = 0;
@@ -530,28 +551,12 @@ const ANIMATION_SHIM_JS = `
       // 2. Scale: starts at 0.75 and scales up smoothly to 1.0
       var scaleVal = 0.75 + ease * 0.25;
 
-      frontEls.forEach(function (el) {
+      avatarNodes.forEach(function (el) {
         el.style.filter = filterStyle;
         el.style.transform = 'perspective(1200px) scale(' + scaleVal.toFixed(4) + ')';
         el.style.opacity = '1';
         el.style.willChange = 'transform, filter';
       });
-
-      backEls.forEach(function (el) {
-        el.style.filter = filterStyle;
-        el.style.transform = 'perspective(1200px) scale(' + scaleVal.toFixed(4) + ')';
-        el.style.opacity = '1';
-        el.style.willChange = 'transform, filter';
-      });
-
-      // Fallback for standalone avatar images
-      if (!frontEls.length && !backEls.length) {
-        allAvatars.forEach(function (el) {
-          el.style.filter = filterStyle;
-          el.style.transform = 'scale(' + scaleVal.toFixed(4) + ')';
-          el.style.willChange = 'transform, filter';
-        });
-      }
 
       if (Math.abs(targetY - currentY) > 0.2) {
         requestAnimationFrame(render);
@@ -561,7 +566,9 @@ const ANIMATION_SHIM_JS = `
       }
     }
 
-    onScroll();
+    // Set initial black & white filter immediately on page load
+    render();
+
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll, { passive: true });
   }

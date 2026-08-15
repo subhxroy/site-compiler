@@ -132,6 +132,11 @@ const Icon = {
       <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>
     </svg>
   ),
+  ExternalLink: ({ size = 13 }: { size?: number }) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: size, height: size }}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+    </svg>
+  ),
   Archive: () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
       <rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>
@@ -867,22 +872,38 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   )}
                 </div>
 
-                {tab === 'preview' && (
-                  <div className="flex items-center gap-1 bg-[#1b1c1e] p-1 rounded-[6px] border border-[#363739]">
-                    {(['desktop', 'tablet', 'mobile'] as const).map((vp) => (
-                      <button
-                        key={vp}
-                        onClick={() => setViewport(vp)}
-                        className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
-                          viewport === vp ? 'bg-[#ff6363] text-[#07080a]' : 'text-[#6a6b6c] hover:text-white'
-                        }`}
-                        title={`${vp} viewport`}
-                      >
-                        {viewportIcons[vp]}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {tab === 'preview' && (
+                    <div className="flex items-center gap-1 bg-[#1b1c1e] p-1 rounded-[6px] border border-[#363739]">
+                      {(['desktop', 'tablet', 'mobile'] as const).map((vp) => (
+                        <button
+                          key={vp}
+                          onClick={() => setViewport(vp)}
+                          className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
+                            viewport === vp ? 'bg-[#ff6363] text-[#07080a]' : 'text-[#6a6b6c] hover:text-white'
+                          }`}
+                          title={`${vp} viewport`}
+                        >
+                          {viewportIcons[vp]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {job.id && (
+                    <a
+                      href={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-[6px] text-xs font-medium bg-[#1b1c1e] text-[#9c9c9d] hover:text-white hover:bg-[#252629] border border-[#363739] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Open full screen preview in new tab"
+                    >
+                      <Icon.ExternalLink size={13} />
+                      <span className="hidden sm:inline">Preview in New Tab</span>
+                      <span className="sm:hidden">Preview</span>
+                    </a>
+                  )}
+                </div>
               </div>
 
               {tab === 'preview' ? (
@@ -923,11 +944,27 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   )}
                 </div>
               ) : tab === 'live' ? (
-                <div className="raycast-key-card p-0 rounded-[10px] h-[550px] overflow-hidden bg-[#040506] relative border border-[#2f3031]">
+                <div className="raycast-key-card p-0 rounded-[10px] h-[550px] overflow-hidden bg-[#040506] relative border border-[#2f3031] flex flex-col">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#111214] border-b border-[#2f3031] text-[11px] text-[#8a8b8d]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#59d499]" />
+                      <span className="font-mono">Live Interactive Preview</span>
+                    </div>
+                    <a
+                      href={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#9c9c9d] hover:text-white flex items-center gap-1 transition-colors"
+                      title="Open full screen in a new tab"
+                    >
+                      <span>Open in New Tab</span>
+                      <Icon.ExternalLink size={11} />
+                    </a>
+                  </div>
                   <iframe
                     src={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
                     title="Live Interactive Site Preview"
-                    className="w-full h-full border-0 bg-[#07080a]"
+                    className="w-full flex-1 border-0 bg-[#07080a]"
                     sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                   />
                 </div>

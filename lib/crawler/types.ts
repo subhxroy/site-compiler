@@ -15,7 +15,7 @@ export interface ExtractedMeta {
 
 export interface ExtractedAsset {
   originalUrl: string;
-  category: 'images' | 'fonts' | 'icons' | 'video';
+  category: 'images' | 'fonts' | 'icons' | 'video' | 'scripts';
   localPath: string;
   filename: string;
 }

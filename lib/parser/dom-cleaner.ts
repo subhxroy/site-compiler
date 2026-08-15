@@ -326,7 +326,23 @@ export function cleanDom(
     }
   });
 
-  // 9. Simplify nested <span> wrappers and collapse single-child Framer positioning divs for human-editable code
+  // 9. Rewrite <script src="..."> and <link rel="modulepreload" href="...">
+  $('script[src]').each((_, el) => {
+    const src = $(el).attr('src');
+    if (src) {
+      const resolved = resolveAssetUrl(src);
+      if (resolved) $(el).attr('src', resolved);
+    }
+  });
+  $('link[rel="modulepreload"][href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (href) {
+      const resolved = resolveAssetUrl(href);
+      if (resolved) $(el).attr('href', resolved);
+    }
+  });
+
+  // 10. Simplify nested <span> wrappers and collapse single-child Framer positioning divs for human-editable code
   simplifyNestedSpansAndWrappers($);
 
   const title = $('title').first().text().trim() || 'Exported Website';

@@ -196,6 +196,13 @@ export function validateUrlForSsrf(inputUrl: string): { valid: boolean; reason?:
   return { valid: true, url: parsed.href };
 }
 
+const dnsCache = new Map<string, { valid: boolean; reason?: string; expiresAt: number }>();
+const DNS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function clearDnsCache(): void {
+  dnsCache.clear();
+}
+
 /**
  * Async validation: runs lexical checks AND resolves the hostname via DNS,
  * rejecting any target that resolves to a blocked or internal address.
@@ -210,24 +217,39 @@ export async function validateUrlForSsrfAsync(inputUrl: string): Promise<{ valid
   // Literal IPs already checked lexically.
   if (hostname.includes(':') || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) return lexical;
 
+  const now = Date.now();
+  const cached = dnsCache.get(hostname);
+  if (cached && cached.expiresAt > now) {
+    if (!cached.valid) {
+      return { valid: false, reason: cached.reason };
+    }
+    return lexical;
+  }
+
   let addresses: Array<{ address: string; family: number }>;
   try {
     addresses = await dns.lookup(hostname, { all: true });
   } catch {
     // Unresolvable hostname cannot reach an internal service — allow and let
     // the actual fetch surface the failure naturally.
+    dnsCache.set(hostname, { valid: true, expiresAt: now + DNS_CACHE_TTL_MS });
     return lexical;
   }
 
   if (!addresses || addresses.length === 0) {
-    return { valid: false, reason: 'Target hostname resolved to no addresses' };
+    const reason = 'Target hostname resolved to no addresses';
+    dnsCache.set(hostname, { valid: false, reason, expiresAt: now + DNS_CACHE_TTL_MS });
+    return { valid: false, reason };
   }
 
   for (const { address } of addresses) {
     if (isBlockedIp(address)) {
-      return { valid: false, reason: `Target resolves to a blocked/internal address (${address})` };
+      const reason = `Target resolves to a blocked/internal address (${address})`;
+      dnsCache.set(hostname, { valid: false, reason, expiresAt: now + DNS_CACHE_TTL_MS });
+      return { valid: false, reason };
     }
   }
 
+  dnsCache.set(hostname, { valid: true, expiresAt: now + DNS_CACHE_TTL_MS });
   return lexical;
 }

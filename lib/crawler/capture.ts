@@ -111,19 +111,20 @@ function urlToHtmlFilename(urlStr: string, isEntry: boolean): string {
   }
 }
 
-function getAssetCategory(urlStr: string, contentType?: string): 'images' | 'fonts' | 'icons' | 'video' {
+function getAssetCategory(urlStr: string, contentType?: string): 'images' | 'fonts' | 'icons' | 'video' | 'scripts' {
   const u = urlStr.toLowerCase().split('?')[0];
   const ct = (contentType || '').toLowerCase();
 
   if (u.match(/\.(woff2?|ttf|otf|eot)/) || ct.includes('font')) return 'fonts';
   if (u.match(/\.(mp4|webm|ogg|mov|avi)/) || ct.includes('video')) return 'video';
   if (u.match(/\.(ico|svg)/) || ct.includes('icon') || ct.includes('svg')) return 'icons';
+  if (u.match(/\.(m?js|wasm)/) || ct.includes('javascript') || ct.includes('ecmascript')) return 'scripts';
   return 'images';
 }
 
 function guessExtension(urlStr: string, contentType?: string): string {
   const u = urlStr.toLowerCase().split('?')[0];
-  const extMatch = u.match(/\.(jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp4|webm|ogg|css|js)(\?|$)/);
+  const extMatch = u.match(/\.(jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp4|webm|ogg|css|js|mjs|wasm)(\?|$)/);
   if (extMatch) return `.${extMatch[1]}`;
   const ct = (contentType || '').split(';')[0].trim();
   const ctMap: Record<string, string> = {
@@ -131,7 +132,7 @@ function guessExtension(urlStr: string, contentType?: string): string {
     'image/webp': '.webp', 'image/avif': '.avif', 'image/svg+xml': '.svg',
     'image/x-icon': '.ico', 'font/woff2': '.woff2', 'font/woff': '.woff',
     'font/ttf': '.ttf', 'video/mp4': '.mp4', 'video/webm': '.webm',
-    'text/css': '.css', 'application/javascript': '.js',
+    'text/css': '.css', 'application/javascript': '.mjs', 'text/javascript': '.js',
   };
   return ctMap[ct] || '.bin';
 }
@@ -201,10 +202,11 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const fontsDir    = path.join(/* turbopackIgnore: true */ assetsDir, 'fonts');
   const iconsDir    = path.join(/* turbopackIgnore: true */ assetsDir, 'icons');
   const videoDir    = path.join(/* turbopackIgnore: true */ assetsDir, 'video');
+  const assetsScriptsDir = path.join(/* turbopackIgnore: true */ assetsDir, 'scripts');
   const screensDir  = path.join(/* turbopackIgnore: true */ rawDir, 'screenshots');
   const screensExportDir = path.join(/* turbopackIgnore: true */ exportsDir, 'screenshots');
 
-  for (const d of [exportsDir, rawDir, pagesRawDir, stylesDir, scriptsDir, assetsDir, imagesDir, fontsDir, iconsDir, videoDir, screensDir, screensExportDir]) {
+  for (const d of [exportsDir, rawDir, pagesRawDir, stylesDir, scriptsDir, assetsDir, imagesDir, fontsDir, iconsDir, videoDir, assetsScriptsDir, screensDir, screensExportDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
 
@@ -305,7 +307,16 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     page.on('response', (resp: Response) => {
       const reqUrl = resp.url();
       const ct = resp.headers()['content-type'] || '';
-      if (ct.startsWith('image/') || ct.startsWith('font/') || ct.includes('video/') || ct.includes('svg')) {
+      if (
+        ct.startsWith('image/') ||
+        ct.startsWith('font/') ||
+        ct.includes('video/') ||
+        ct.includes('svg') ||
+        ct.includes('javascript') ||
+        ct.includes('ecmascript') ||
+        reqUrl.includes('.mjs') ||
+        reqUrl.includes('.js')
+      ) {
         networkAssetUrls.add(reqUrl);
       }
     });
@@ -654,7 +665,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         }
 
-        // Collect DOM assets from this page
+        // Collect DOM assets from this page (images, videos, fonts, icons, scripts)
         let domAssets: string[] = [];
         try {
           domAssets = await page.evaluate(() => {
@@ -683,6 +694,17 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             document.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
               const m = el.style.backgroundImage.match(/url\(['"]?(.*?)['"]?\)/);
               if (m?.[1] && !m[1].startsWith('data:')) urls.add(m[1]);
+            });
+            // Extract external scripts and modulepreload resources (Framer / React / motion libraries)
+            document.querySelectorAll('script[src], link[rel="modulepreload"], link[rel="preload"][as="script"]').forEach((el) => {
+              const src = (el as HTMLScriptElement).src || el.getAttribute('href');
+              if (src && !src.startsWith('data:') && !src.startsWith('blob:') && !src.includes('google-analytics') && !src.includes('gtag') && !src.includes('framer.com/edit')) {
+                try {
+                  urls.add(new URL(src, window.location.href).href);
+                } catch {
+                  urls.add(src);
+                }
+              }
             });
             return [...urls];
           });
@@ -828,17 +850,31 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         const p = path.join(stylesDir, `style_${styleIdx++}.css`);
         fs.writeFileSync(p, sanitizeCssText(s.content), 'utf-8');
         cssPaths.push(p);
-      } else if (s.type === 'link' && s.href) {
-        try {
-          const assetSafety = await validateUrlForSsrfAsync(s.href);
-          if (!assetSafety.valid) continue;
-          const res = await context.request.get(s.href, { timeout: 8000 });
-          if (res.ok()) {
-            const p = path.join(stylesDir, `style_${styleIdx++}.css`);
-            fs.writeFileSync(p, sanitizeCssText(await res.text()), 'utf-8');
-            cssPaths.push(p);
-          }
-        } catch {}
+      }
+    }
+
+    const externalStyles = collectedStylesheetData.filter((s): s is { type: 'link'; href: string } => s.type === 'link' && !!s.href);
+    if (externalStyles.length > 0) {
+      const extResults = await Promise.all(
+        externalStyles.map(async (s) => {
+          try {
+            const assetSafety = await validateUrlForSsrfAsync(s.href);
+            if (!assetSafety.valid) return null;
+            const res = await context.request.get(s.href, { timeout: 8000 });
+            if (res.ok()) {
+              return await res.text();
+            }
+          } catch {}
+          return null;
+        })
+      );
+
+      for (const cssText of extResults) {
+        if (cssText) {
+          const p = path.join(stylesDir, `style_${styleIdx++}.css`);
+          fs.writeFileSync(p, sanitizeCssText(cssText), 'utf-8');
+          cssPaths.push(p);
+        }
       }
     }
 
@@ -854,7 +890,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       }
     }
 
-    // ── Download all assets ─────────────────────────────────────────────
+    // ── Download all assets (Concurrent pool) ─────────────────────────────
     const mergedAssetUrls = [
       ...new Set([
         ...allDiscoveredAssetUrls,
@@ -865,48 +901,65 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       .filter((u) => u.startsWith('http://') || u.startsWith('https://'))
       .slice(0, 300); // Resource limit: cap at 300 assets
 
-    log(`Downloading ${mergedAssetUrls.length} total assets...`);
+    log(`Downloading ${mergedAssetUrls.length} total assets in parallel...`);
 
-    const assetManifest: ExtractedAsset[] = [];
-    let assetCounter = 1;
+    const ASSET_CONCURRENCY = 12;
+    const downloadedManifestItems: Array<ExtractedAsset | null> = new Array(mergedAssetUrls.length).fill(null);
 
-    for (const assetUrl of mergedAssetUrls) {
-      try {
-        // Assets are downloaded server-side (Node), so a malicious page could
-        // otherwise point them at internal services. DNS-resolving SSRF check.
-        const assetSafety = await validateUrlForSsrfAsync(assetUrl);
-        if (!assetSafety.valid) {
-          log(`[SSRF Guard] Skipped blocked asset URL: ${assetUrl} (${assetSafety.reason})`);
-          continue;
-        }
-        const res = await context.request.get(assetUrl, { timeout: 6000 });
-        if (!res.ok()) continue;
+    let nextAssetIndex = 0;
+    const assetWorkers = Array.from({ length: Math.min(ASSET_CONCURRENCY, mergedAssetUrls.length) }, async () => {
+      while (nextAssetIndex < mergedAssetUrls.length) {
+        const itemIdx = nextAssetIndex++;
+        const assetUrl = mergedAssetUrls[itemIdx];
+        const assetNumber = itemIdx + 1;
 
-        const body = await res.body();
-        // Limit individual asset size to 35MB to prevent memory/disk exhaustion
-        if (body.length > 35 * 1024 * 1024) {
-          log(`[Resource Limit] Skipped oversized asset (${(body.length / 1024 / 1024).toFixed(1)} MB): ${assetUrl}`);
-          continue;
-        }
+        try {
+          // Assets are downloaded server-side (Node), so a malicious page could
+          // otherwise point them at internal services. DNS-resolving SSRF check.
+          const assetSafety = await validateUrlForSsrfAsync(assetUrl);
+          if (!assetSafety.valid) {
+            log(`[SSRF Guard] Skipped blocked asset URL: ${assetUrl} (${assetSafety.reason})`);
+            continue;
+          }
+          const res = await context.request.get(assetUrl, {
+            timeout: 6000,
+            headers: { 'Accept': 'image/png,image/jpeg,image/gif,image/svg+xml,image/*;q=0.8,application/javascript,*/*;q=0.5' },
+          });
+          if (!res.ok()) continue;
 
-        const ct = res.headers()['content-type'] || '';
-        const category = getAssetCategory(assetUrl, ct);
-        const ext = guessExtension(assetUrl, ct);
-        const filename = sanitizeFilename(assetUrl, assetCounter++, ext);
+          const body = await res.body();
+          // Limit individual asset size to 35MB to prevent memory/disk exhaustion
+          if (body.length > 35 * 1024 * 1024) {
+            log(`[Resource Limit] Skipped oversized asset (${(body.length / 1024 / 1024).toFixed(1)} MB): ${assetUrl}`);
+            continue;
+          }
 
-        const catDir =
-          category === 'fonts' ? fontsDir :
-          category === 'icons' ? iconsDir :
-          category === 'video' ? videoDir :
-          imagesDir;
+          const ct = res.headers()['content-type'] || '';
+          const category = getAssetCategory(assetUrl, ct);
+          const ext = guessExtension(assetUrl, ct);
+          const filename = sanitizeFilename(assetUrl, assetNumber, ext);
 
-        const localPath = path.join(/* turbopackIgnore: true */ catDir, filename);
-        const relPath   = path.relative(rawDir, localPath).replace(/\\/g, '/');
+          const catDir =
+            category === 'fonts' ? fontsDir :
+            category === 'icons' ? iconsDir :
+            category === 'video' ? videoDir :
+            category === 'scripts' ? assetsScriptsDir :
+            imagesDir;
 
-        fs.writeFileSync(localPath, body);
-        assetManifest.push({ originalUrl: assetUrl, category, localPath: relPath, filename });
-      } catch {}
-    }
+          const localPath = path.join(/* turbopackIgnore: true */ catDir, filename);
+          const relPath   = path.relative(rawDir, localPath).replace(/\\/g, '/');
+
+          fs.writeFileSync(localPath, body);
+          downloadedManifestItems[itemIdx] = { originalUrl: assetUrl, category, localPath: relPath, filename };
+        } catch {}
+      }
+    });
+
+    await Promise.all(assetWorkers);
+
+    const assetManifest: ExtractedAsset[] = downloadedManifestItems.filter(
+      (item): item is ExtractedAsset => item !== null
+    );
 
     fs.writeFileSync(path.join(rawDir, 'assets_manifest.json'), JSON.stringify(assetManifest, null, 2), 'utf-8');
     const primaryMeta = capturedPages[0]?.meta || { title: 'Exported Site', canonicalUrl: null, metaTags: [], jsonLd: [] };

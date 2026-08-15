@@ -277,6 +277,84 @@ app.get('/api/job/:id/screenshot', (req: Request, res: Response) => {
   fs.createReadStream(screenshotPath).pipe(res);
 });
 
+// ── Job Live Interactive Preview Endpoint ──────────────────────────────────
+app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const exportHtmlDir = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export');
+
+  // If requesting a sub-file (e.g. /api/job/:id/preview/styles.css or assets/...)
+  const reqSubPath = req.params[0];
+  if (reqSubPath) {
+    const safeSubPath = path.normalize(reqSubPath).replace(/^(\.\.[\/\\])+/, '');
+    const subFilePath = path.join(exportHtmlDir, safeSubPath);
+    if (fs.existsSync(subFilePath) && fs.statSync(subFilePath).isFile()) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.sendFile(subFilePath);
+      return;
+    }
+  }
+
+  const exportHtmlPath = path.join(exportHtmlDir, 'index.html');
+  if (fs.existsSync(exportHtmlPath)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.sendFile(exportHtmlPath);
+    return;
+  }
+
+  // If compilation is still ongoing, return clean loading page
+  const job = getJob(id);
+  const progressMsg = job?.progressMessage || 'Compiling site and generating interactive live preview…';
+  const loadingHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Preview</title>
+  <style>
+    body { margin:0; background:#07080a; color:#ffffff; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:16px; text-align:center; padding:20px; box-sizing:border-box; }
+    .spinner { width:36px; height:36px; border:3px solid #22242a; border-top-color:#ff6363; border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .title { font-size:14px; font-weight:600; color:#ffffff; }
+    .desc { font-size:12px; color:#8a8b8d; font-family:monospace; max-width:360px; line-height:1.5; }
+  </style>
+  <meta http-equiv="refresh" content="2">
+</head>
+<body>
+  <div class="spinner"></div>
+  <div class="title">Generating Live Interactive Preview…</div>
+  <div class="desc">${progressMsg}</div>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(loadingHtml);
+});
+
+// Also support relative asset lookups like /api/job/:id/styles.css or /api/job/:id/assets/...
+app.get('/api/job/:id/:file(*)', (req: Request, res: Response, next: NextFunction) => {
+  const { id, file } = req.params;
+  if (['status', 'screenshot', 'preview', 'download', 'payment', 'cancel', 'restart'].includes(file)) {
+    return next();
+  }
+  const exportHtmlDir = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export');
+  const safeFile = path.normalize(file).replace(/^(\.\.[\/\\])+/, '');
+  const filePath = path.join(exportHtmlDir, safeFile);
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.sendFile(filePath);
+    return;
+  }
+  next();
+});
+
 // ── Job Payment Submission Endpoint ───────────────────────────────────────────
 app.post('/api/job/:id/payment', (req: Request, res: Response) => {
   const { id } = req.params;
