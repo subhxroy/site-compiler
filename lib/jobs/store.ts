@@ -50,8 +50,9 @@ const jobStore = new Map<string, JobState>();
 // Idempotency key store: maps request idempotency key -> { jobId, createdAt }
 const idempotencyStore = new Map<string, { jobId: string; createdAt: number }>();
 
-// Export package retention. Default 24 hours.
+// Export package retention. Default 24 hours for anonymous/unmodeled; 30 days for authenticated model exports.
 const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000;
+const EXTENDED_MODEL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const RETENTION_MS = (() => {
   const fromEnv = Number(process.env.EXPORT_RETENTION_MS);
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_RETENTION_MS;
@@ -89,10 +90,16 @@ export function cleanupOldExportJobs(maxAgeMs: number = RETENTION_MS): void {
       // can keep the dir older than maxAgeMs between writes.
       const job = jobStore.get(entry.name);
       if (job && ACTIVE_STATUSES.has(job.status)) continue;
+
+      // Authenticated exports with an editable site model get 30-day retention;
+      // anonymous exports and un-modeled exports stay strictly on the 24-hour retention window.
+      const isOwnedModelJob = !!(job?.hasModel && job?.userEmail);
+      const effectiveMaxAge = isOwnedModelJob ? EXTENDED_MODEL_RETENTION_MS : maxAgeMs;
+
       const fullPath = path.join(exportsDir, entry.name);
       try {
         const stats = fs.statSync(fullPath);
-        if (now - stats.mtimeMs > maxAgeMs) {
+        if (now - stats.mtimeMs > effectiveMaxAge) {
           fs.rmSync(fullPath, { recursive: true, force: true });
           jobStore.delete(entry.name);
           console.log(`[Exports Garbage Collector] Purged expired export package: ${entry.name}`);
@@ -178,8 +185,11 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idem
   // Schedule automatic purging of server files after the retention window.
   setTimeout(() => {
     try {
-      const job = jobStore.get(jobId);
-      if (job && ACTIVE_STATUSES.has(job.status)) return;
+      const currentJob = jobStore.get(jobId);
+      if (currentJob && ACTIVE_STATUSES.has(currentJob.status)) return;
+      // Skip 24h purge timer if this is an authenticated owned model job (retained for 30d by GC)
+      if (currentJob?.hasModel && currentJob?.userEmail) return;
+
       const exportDir = path.resolve(process.cwd(), 'exports', jobId);
       if (fs.existsSync(exportDir)) {
         fs.rmSync(exportDir, { recursive: true, force: true });

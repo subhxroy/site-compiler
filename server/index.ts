@@ -372,11 +372,64 @@ app.get('/api/job/:id/:file(*)', (req: Request, res: Response, next: NextFunctio
   next();
 });
 
+// Helper to verify requester ownership or admin privileges for site model access
+async function verifyModelAccess(req: Request, job: JobState | undefined): Promise<boolean> {
+  if (!job) return false;
+
+  // 1. Check admin bypass secret header
+  const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
+  const isAdminBypass = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
+  if (isAdminBypass) return true;
+
+  // 2. Check verified admin or job owner ID token
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7).trim();
+    if (isFirebaseAdminConfigured() && adminAuth) {
+      try {
+        const decoded = await adminAuth.verifyIdToken(token);
+        if (decoded && decoded.email) {
+          const userEmail = decoded.email.toLowerCase().trim();
+          const defaultAdminEmails = ['contact.subhroy-1@gmail.com', 'contact.subhroy@gmail.com', 'subhxroy@gmail.com'];
+          const allowlist = (process.env.ADMIN_EMAILS || defaultAdminEmails.join(','))
+            .split(',')
+            .map((x) => x.trim().toLowerCase())
+            .filter(Boolean);
+          if (allowlist.includes(userEmail)) return true;
+
+          if (job.userEmail && job.userEmail.toLowerCase().trim() === userEmail) {
+            return true;
+          }
+        }
+      } catch (tokenErr) {
+        console.warn('[Model API] ID token verification warning:', tokenErr);
+      }
+    }
+  }
+
+  // 3. If job payment is already approved (unlocked export)
+  if (job.paymentApproved) return true;
+
+  return false;
+}
+
 // ── Site Model API Endpoints ──────────────────────────────────────────────────
 app.get('/api/job/:id/model', async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
     res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const job = getJob(id);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  const isAuthorized = await verifyModelAccess(req, job);
+  if (!isAuthorized) {
+    res.status(403).json({ error: 'Unauthorized: Model access requires verified job ownership or admin access' });
     return;
   }
 
@@ -400,6 +453,18 @@ app.post('/api/job/:id/model', modelRateLimit, async (req: Request, res: Respons
   const { id } = req.params;
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
     res.status(400).json({ error: 'Invalid job id' });
+    return;
+  }
+
+  const job = getJob(id);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  const isAuthorized = await verifyModelAccess(req, job);
+  if (!isAuthorized) {
+    res.status(403).json({ error: 'Unauthorized: Model access requires verified job ownership or admin access' });
     return;
   }
 

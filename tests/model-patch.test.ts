@@ -97,6 +97,16 @@ export async function runModelPatchTests(): Promise<TestResult[]> {
   assert('Patch successfully updates image alt', $patched(`[data-sc-id="${imgId}"]`).attr('alt') === 'New Hero Alt');
   assert('Patch preserves surrounding container classes', $patched('.framer-container').length === 1 && $patched('.framer-nested').length === 1);
 
+  // ── 3b. Deep Structural Diff Isolation Verification ──
+  // Strip the 2 target nodes from both $orig and $patched, and assert 100% exact equality
+  const $diffOrig = cheerio.load(taggedHtml);
+  const $diffPatched = cheerio.load(patchResult.patchedHtml);
+  $diffOrig(`[data-sc-id="${h1Id}"]`).remove();
+  $diffOrig(`[data-sc-id="${imgId}"]`).remove();
+  $diffPatched(`[data-sc-id="${h1Id}"]`).remove();
+  $diffPatched(`[data-sc-id="${imgId}"]`).remove();
+  assert('Deep structural diff: 100% of all untouched DOM nodes, attributes, and classes are identical', $diffOrig.html() === $diffPatched.html());
+
   // ── 4. Patch Security Validations ──
   // Remote/malicious URL rejection
   const badSrcResult = applyPatches(taggedHtml, [
@@ -135,6 +145,10 @@ export async function runModelPatchTests(): Promise<TestResult[]> {
 
   updateJob(mockJobId, { status: 'completed', pageCount: 1 });
 
+  // Test empty patch short-circuit
+  const emptyPatchResult = await processJobPatches(mockJobId, []);
+  assert('Empty patches list short-circuits with ok=true without rewriting', emptyPatchResult.ok === true && emptyPatchResult.zipReady === true);
+
   const jobPatchResult = await processJobPatches(mockJobId, [
     { nodeId: h1Id!, content: 'Live Edited Headline' },
   ]);
@@ -158,6 +172,15 @@ export async function runModelPatchTests(): Promise<TestResult[]> {
   const zipPath = path.join(exportsDir, `${mockJobId}.zip`);
   const zipCheck = validateZip(zipPath);
   assert('validateZip passes on re-generated ZIP', zipCheck.ok === true);
+
+  // Verify ZIP contents and .sc-tagged exclusion
+  const AdmZip = (await import('adm-zip')).default;
+  const zip = new AdmZip(zipPath);
+  const zipEntries = zip.getEntries().map((e) => e.entryName);
+  const hasTaggedDir = zipEntries.some((name) => name.includes('.sc-tagged'));
+  assert('ZIP package explicitly excludes internal .sc-tagged directory', hasTaggedDir === false);
+  assert('ZIP contains root index.html', zipEntries.includes('index.html'));
+  assert('ZIP contains root styles.css', zipEntries.includes('styles.css'));
 
   // Cleanup test mock dir
   try {

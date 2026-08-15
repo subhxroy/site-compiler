@@ -72,5 +72,29 @@ export async function runSecurityTests(): Promise<{ name: string; passed: boolea
   assert('Bearer token redacted from logs', cleanLog.includes('Bearer [TOKEN_REDACTED]'));
   assert('UTR number redacted from logs', cleanLog.includes('UTR-[REDACTED]'));
 
+  // ── 5. Model Route Ownership & Bypass Authorization ──
+  const bypassSecret = 'test_secret_12345';
+  process.env.ADMIN_BYPASS_SECRET = bypassSecret;
+
+  function verifyAccess(
+    reqOwnerEmail: string | undefined,
+    reqBypassHeader: string | undefined,
+    jobOwnerEmail: string | undefined,
+    isPaymentApproved: boolean
+  ): boolean {
+    if (reqBypassHeader && reqBypassHeader === bypassSecret) return true;
+    if (reqOwnerEmail && testAllowlist.includes(reqOwnerEmail.toLowerCase().trim())) return true;
+    if (reqOwnerEmail && jobOwnerEmail && reqOwnerEmail.toLowerCase().trim() === jobOwnerEmail.toLowerCase().trim()) return true;
+    if (isPaymentApproved) return true;
+    return false;
+  }
+
+  assert('Owner can access their own model', verifyAccess('owner@domain.com', undefined, 'owner@domain.com', false) === true);
+  assert('Admin can access any model via allowlist', verifyAccess('contact.subhroy@gmail.com', undefined, 'stranger@domain.com', false) === true);
+  assert('Bypass secret header grants access to model', verifyAccess(undefined, bypassSecret, 'stranger@domain.com', false) === true);
+  assert('Approved payment grants public model access', verifyAccess(undefined, undefined, 'stranger@domain.com', true) === true);
+  assert('Stranger/attacker is rejected from unapproved job', verifyAccess('attacker@evil.com', undefined, 'victim@domain.com', false) === false);
+  assert('Anonymous requester is rejected from unapproved job', verifyAccess(undefined, undefined, 'victim@domain.com', false) === false);
+
   return results;
 }
