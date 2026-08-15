@@ -221,7 +221,7 @@ export function productSchema() {
     },
     offers: {
       '@type': 'Offer',
-      price: '20.00',
+      price: '500',
       priceCurrency: 'INR',
       priceValidUntil: '2027-12-31',
       itemCondition: 'https://schema.org/NewCondition',
