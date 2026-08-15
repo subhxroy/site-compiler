@@ -16,7 +16,7 @@ Three runtime halves:
 | **Backend engine** (`server/`) | Express + Playwright + Anthropic | Render free tier (`render.yaml`) | 3001 |
 | **Admin portal** (`admin-portal/`) | Next.js static export, Firebase | `admin.sitecompiler.app` | 3002 |
 
-Monetization: **pay-per-export**, ₹20 per block of 10 pages, paid via UPI, manually verified by admin through Firestore `export_approvals`.
+Monetization: **pay-per-export**, ₹500 per block of 10 pages (Starter ₹500 for ≤10 pages, Medium ₹1,000 for 11–20 pages, Large ₹1,500+ for 21+ pages), paid via UPI, manually verified by admin through Firestore `export_approvals`.
 
 > **Critical architecture gotcha (the split-brain):** the export job state machine (`JobState`) lives in the **Render backend's in-memory store**, but payment approval lives in **Firestore** (written by the Netlify-side admin API and the payment route). Render never sees Netlify's in-memory writes and vice-versa. The system reconciles by making Firestore `export_approvals/{jobId}` the single source of truth for payment, overlaying it in the status proxy route, and forwarding an admin bypass secret header on download. See §8.1 and §6.
 
@@ -170,7 +170,7 @@ codify/
 - Client. Lists saved exports via `getUserExports()` (→ `/api/user/exports`). Shows title/url/format/jobId/date/size, download link → `/api/job/:id/download`. Handles loading, signed-out, and empty states.
 
 ### `app/pricing/page.tsx`
-- Static marketing. 3 tiers: Starter ₹20 (≤10 pages), Medium ₹40 (11–20), Large ₹60+ (21+, +₹20 per 10 pages). "Fair Minimal Cost Model" callout (covers Playwright compute, no subscriptions). Pricing FAQs + `productSchema`/`faqPageSchema`/`breadcrumbListSchema`.
+- Static marketing. 3 tiers: Starter ₹500 (≤10 pages), Medium ₹1,000 (11–20), Large ₹1,500+ (21+, +₹500 per 10 pages). "Fair Minimal Cost Model" callout (covers Playwright compute, no subscriptions). Pricing FAQs + `productSchema`/`faqPageSchema`/`breadcrumbListSchema`.
 
 ### `app/about/page.tsx`
 - Founder page (Subhankar Roy, Silchar, Assam, India). Photo `/subhankar.jpg` (grayscale→color hover), bio, "why SiteCompiler" story (platform lock-in), portfolio grid (SiteCompiler, Agentic OS, Anonym, MeatDae, BS1Fit Gym, Bellagio), skills, socials (GitHub/LinkedIn/X/Instagram via inline SVGs), contact CTA `contact.subhroy@gmail.com`. `personSchema` + breadcrumb.
@@ -190,7 +190,7 @@ Each is a thin data file feeding `components/export-page-template.tsx` (`ExportP
 | `wix-export` | WIX EXPORTER ENGINE | Wix → clean code |
 | `html-export` | STATIC HTML ENGINE | any → static HTML |
 | `react-export` | REACT TSX ENGINE | any → React TSX |
-| `nextjs-export` | NEXT.JS 15 ENGINE *(leftover badge — page copy says "Next.js 16"; only this badge wasn't swept)* | any → Next.js 16 |
+| `nextjs-export` | NEXT.JS 16 ENGINE | any → Next.js 16 |
 | `tailwind-export` | TAILWIND CSS ENGINE | any → Tailwind utilities |
 | `website-to-tailwind` | CONVERSION PAIR ENGINE | any CSS → Tailwind |
 | `vue-export` | VUE 3 ENGINE | any → Vue 3 SFC |
@@ -223,7 +223,10 @@ Admin/user routes share a pattern: CORS `*` headers, `verifyAdminRequest` or Bea
 - Proxy hop: `AbortController` with an 8.5s timeout (inside Netlify's 10s budget); non-JSON responses (e.g. Render cold-start 502/504 HTML) and aborts → `503 { isColdStart: true }` so the client retries instead of showing a dead error.
 
 ### `api/export/payment/route.ts`
-- POST. Rate 10/5min. **Server recomputes the price — the client amount is never trusted**: `max(20, ceil(pageCount/10)*20)`, pageCount clamped to `1..100000`. Writes `export_approvals/{jobId}` doc `{ amount, pageCount, senderAccount, utrNumber, userEmail, status: 'pending', paymentSubmitted: true, paymentApproved: false, createdAt, submittedAt }`. This doc is the split-brain reconciliation anchor. Also mirrors the submission into the in-memory job store (`updateJob`).
+- POST. Rate 10/5min. **Server recomputes the price — the client amount is never trusted**: `max(500, ceil(pageCount/10)*500)`, pageCount clamped to `1..100000`. Writes `export_approvals/{jobId}` doc `{ amount, pageCount, senderAccount, utrNumber, userEmail, status: 'pending', paymentSubmitted: true, paymentApproved: false, createdAt, submittedAt }`. This doc is the split-brain reconciliation anchor. Also mirrors the submission into the in-memory job store (`updateJob`).
+
+### `api/job/[id]/preview/route.ts` & `api/job/[id]/preview/[...file]/route.ts`
+- GET. Serves the full compiled HTML preview and its relative assets (`styles.css`, `script.js`, `assets/images/*`, `assets/fonts/*`, `assets/scripts/*`) for standalone full-screen preview in new browser tabs and `<iframe>` embedding.
 
 ### `api/health/route.ts`
 - GET. Mirrors the Render engine's health shape: `{ status: 'ok', service: 'sitecompiler-backend', timestamp, uptimeSeconds, memoryUsage }` — plus `OPTIONS` preflight. CORS `*`, no-store. (The real engine health with uptime/memory lives on Render at `/health`; this is the Netlify-side alias for keep-alive probes.)
@@ -485,13 +488,13 @@ Playwright crawler:
 ## 12. Key Facts / Gotchas Cheat-Sheet
 
 1. **Split-brain payment reconciliation** — job state in Render memory, approvals in Firestore. `status` route overlays approval; `download` forwards `x-sitecompiler-admin-bypass` = `BACKEND_ADMIN_SECRET` (must equal Netlify's `BACKEND_ADMIN_SECRET`; Render `sync: false`).
-2. **Price is server-authoritative** — `max(20, ceil(pageCount/10)*20)`, pageCount clamped `1..100000`; never trust the client amount.
+2. **Price is server-authoritative** — `max(500, ceil(pageCount/10)*500)`, pageCount clamped `1..100000`; never trust the client amount.
 3. **Admin role check is server-side** (`verify-admin`), and `user/sync` admin detection excludes the literal `admin` substring to prevent `admin@x.com` escalation.
 4. **`PLAYWRIGHT_BROWSERS_PATH=./pw-browsers`** set in both `server/index.ts` and `lib/crawler/capture.ts` — required on Render.
 5. **Job retention 24h** — was 10 min; keep long enough for pay → approve → download.
-6. **SSRF guard blocks CGNAT 100.64/10 + metadata + DNS-rebind** — the export engine fetches arbitrary user URLs, so this is load-bearing.
+6. **SSRF guard blocks CGNAT 100.64/10 + metadata + DNS-rebind** — the export engine fetches arbitrary user URLs, so this is load-bearing. Includes in-memory 5-minute DNS resolution caching in `validateUrlForSsrfAsync`.
 7. **Rate limiter uses the LAST `x-forwarded-for` entry** — the first can be spoofed by the client.
-8. **Next.js 16.3** — the generated output scaffold is Next 16 (page-assembler pins `^16.3.0`). Most marketing copy was swept from "Next.js 15", but **leftovers remain**: the `nextjs-export` page badge still reads "NEXT.JS 15 ENGINE" and the changelog `v1.100.0` entry says "Next.js 15 App Router". Read `node_modules/next/dist/docs/` before touching Next code.
+8. **Next.js 16.3** — the generated output scaffold is Next 16 (page-assembler pins `^16.3.0`). Read `node_modules/next/dist/docs/` before touching Next code.
 9. **`AGENTS.md` is auto-repaired by `next dev`** — don't strip the block in PRs.
 10. **No real secrets in repo** — `.env.local` and service-account JSON are gitignored; `NEXT_PUBLIC_FIREBASE_API_KEY` fallback values in `config.ts` are publishable client keys (Netlify omits them from secret scan).
 11. **Two admin UIs exist** — `app/admin/page.tsx` (in this app) and `admin-portal/` (separate static app on `admin.sitecompiler.app`). Both hit the same `/api/admin/*` routes.
@@ -507,6 +510,8 @@ Playwright crawler:
 21. **Framer Hero Avatar & Scroll Fidelity (v3.0)** — `initFramerAvatar()` runs a 60fps `requestAnimationFrame` Lerp scroll engine (`0.14` damping). The portrait starts in Black & White (`grayscale(100%) contrast(1.08) brightness(0.92)` at scale `0.75`) and smoothly dissolves into full vibrant color and expands to scale `1.0` as the user scrolls past the hero. `CRITICAL_OVERRIDE_CSS` removes blanket `filter: none !important` and `transform: none !important` to preserve 3D card flips and scroll filters.
 22. **Google CDN Avatar Referrer Policy** — Google profile image CDN (`lh3.googleusercontent.com`) returns 403 when requests send `localhost` referrers. All avatar `<img>` tags carry `referrerPolicy="no-referrer"` with fallback to user initials on error.
 23. **Client Polling Watchdog Timeout Guard** — The 5-minute client-side watchdog only fails active running jobs (`job.status !== 'completed'`). It never overrides an already-completed export awaiting review or previewing.
+24. **Multi-Page Disk Rehydration & Accurate Page Counts** — When jobs are restored from disk on server restart or reload, `getJob()` dynamically inspects `exports/:id/output/html-export/` (or `raw/pages/` and `output/nextjs-export/app/`) to accurately report actual captured page counts (`job.pageCount`) and recompute tier pricing accordingly rather than hardcoding `1`.
+25. **Standalone Live Fullscreen Preview & Asset Streamer** — `/api/job/:id/preview` and `/api/job/:id/preview/[...file]` serve the compiled static output (`index.html`, `styles.css`, `script.js`, and all localized assets in `assets/images/*`, `assets/fonts/*`, `assets/scripts/*`) for both in-app `<iframe>` embedding and standalone new-tab full screen previews.
 
 ---
 

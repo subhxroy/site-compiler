@@ -12,7 +12,7 @@ export const metadata = buildMetadata({
 const pricingFaqs = [
   {
     question: 'How does billing work for website exports?',
-    answer: 'We use a transparent pay-per-export model starting at ₹20 per 10 pages strictly to cover Playwright browser rendering and server resources. Once your UPI payment is submitted, your complete ZIP package is unlocked for instant download.',
+    answer: 'We use a transparent pay-per-export model starting at ₹500 per 10 pages strictly to cover Playwright browser rendering and server resources. Once your UPI payment is submitted, your complete ZIP package is unlocked for instant download.',
   },
   {
     question: 'Can I export sites for commercial projects?',
@@ -20,7 +20,7 @@ const pricingFaqs = [
   },
   {
     question: 'Why is there a minimal fee per export?',
-    answer: 'SiteCompiler executes multi-page Playwright browser instances to render dynamic JavaScript and reconstruct editable components. The minimal ₹20 fee covers compute costs without forcing expensive monthly subscriptions.',
+    answer: 'SiteCompiler executes multi-page Playwright browser instances to render dynamic JavaScript and reconstruct editable components. The minimal ₹500 fee covers compute costs without forcing expensive monthly subscriptions.',
   },
   {
     question: 'Are there any hidden recurring subscriptions?',
@@ -64,7 +64,7 @@ export default function PricingPage() {
           <div className="raycast-key-card p-8 space-y-6 flex flex-col justify-between">
             <div className="space-y-4">
               <div className="text-lg font-medium text-white">Starter Export</div>
-              <div className="text-3xl font-bold text-white">₹20 <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
+              <div className="text-3xl font-bold text-white">₹500 <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
               <p className="text-xs text-[#9c9c9d]">For smaller websites up to 10 pages per export.</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
                 <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Up to 10 Pages captured</li>
@@ -83,7 +83,7 @@ export default function PricingPage() {
             <span className="absolute -top-3 right-6 text-[10px] font-mono px-2.5 py-0.5 rounded-[6px] bg-[#ff6363] text-black font-semibold uppercase">Most Popular</span>
             <div className="space-y-4">
               <div className="text-lg font-medium text-white">Medium Export</div>
-              <div className="text-3xl font-bold text-white">₹40 <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
+              <div className="text-3xl font-bold text-white">₹1,000 <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
               <p className="text-xs text-[#9c9c9d]">For multi-page sites up to 20 pages per export.</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
                 <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> 11 to 20 Pages captured</li>
@@ -101,10 +101,10 @@ export default function PricingPage() {
           <div className="raycast-key-card p-8 space-y-6 flex flex-col justify-between">
             <div className="space-y-4">
               <div className="text-lg font-medium text-white">Large Export</div>
-              <div className="text-3xl font-bold text-white">₹60+ <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
-              <p className="text-xs text-[#9c9c9d]">₹20 per block of 10 pages for large sites (21+ pages).</p>
+              <div className="text-3xl font-bold text-white">₹1,500+ <span className="text-xs font-normal text-[#6a6b6c]">/ export</span></div>
+              <p className="text-xs text-[#9c9c9d]">₹500 per block of 10 pages for large sites (21+ pages).</p>
               <ul className="space-y-2.5 text-xs text-[#9c9c9d] pt-4 border-t border-[#1b1c1e]">
-                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> 21+ Pages captured (+₹20 per 10 pages)</li>
+                <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> 21+ Pages captured (+₹500 per 10 pages)</li>
                 <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Complete subpage depth crawling</li>
                 <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Clean TSX component extraction</li>
                 <li className="flex items-center gap-2"><span className="text-[#59d499]">✓</span> Admin fast approval</li>

@@ -556,7 +556,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           jobId={job.id}
           url={job.url}
           pageCount={job.pageCount || 1}
-          amount={job.amount || 20}
+          amount={job.amount || 500}
           userEmail={user?.email || undefined}
           onPaymentSubmitted={() => {
             setJob((prev) => (prev ? { ...prev, paymentSubmitted: true } : null));

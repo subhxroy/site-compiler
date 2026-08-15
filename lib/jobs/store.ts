@@ -229,6 +229,36 @@ export function getJob(jobId: string): JobState | undefined {
         const stat = isZipReady ? fs.statSync(zipPath) : null;
         const zipSizeKb = stat ? Math.round(stat.size / 1024) : undefined;
 
+        let detectedPageCount = 1;
+        const htmlExportDir = path.join(exportDir, 'output', 'html-export');
+        const nextjsExportAppDir = path.join(exportDir, 'output', 'nextjs-export', 'app');
+        const rawPagesDir = path.join(exportDir, 'raw', 'pages');
+
+        if (fs.existsSync(htmlExportDir)) {
+          const htmlFiles = fs.readdirSync(htmlExportDir).filter((f) => f.endsWith('.html'));
+          if (htmlFiles.length > 0) detectedPageCount = htmlFiles.length;
+        } else if (fs.existsSync(nextjsExportAppDir)) {
+          const countPages = (dir: string): number => {
+            let count = 0;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (entry.isDirectory()) {
+                count += countPages(path.join(dir, entry.name));
+              } else if (entry.isFile() && (entry.name === 'page.tsx' || entry.name === 'page.jsx')) {
+                count++;
+              }
+            }
+            return count;
+          };
+          const count = countPages(nextjsExportAppDir);
+          if (count > 0) detectedPageCount = count;
+        } else if (fs.existsSync(rawPagesDir)) {
+          const rawFiles = fs.readdirSync(rawPagesDir).filter((f) => f.endsWith('.html'));
+          detectedPageCount = 1 + rawFiles.length;
+        }
+
+        const calculatedAmount = Math.max(500, Math.ceil(detectedPageCount / 10) * 500);
+
         const restoredJob: JobState = {
           id: jobId,
           url,
@@ -240,8 +270,8 @@ export function getJob(jobId: string): JobState | undefined {
           completedAt: isZipReady ? (stat ? stat.mtimeMs : Date.now()) : undefined,
           downloadUrl: isZipReady ? `/api/job/${jobId}/download` : undefined,
           zipSizeKb,
-          pageCount: 1,
-          amount: 20,
+          pageCount: detectedPageCount,
+          amount: calculatedAmount,
           paymentSubmitted: false,
           paymentApproved: false,
           screenshots: {

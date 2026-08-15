@@ -47,16 +47,16 @@ export async function runSecurityTests(): Promise<{ name: string; passed: boolea
 
   // ── 3. Server-Authoritative Price Calculation ──
   function computeExportPrice(pageCount: number): number {
-    return Math.max(20, Math.ceil(pageCount / 10) * 20);
+    return Math.max(500, Math.ceil(pageCount / 10) * 500);
   }
 
-  assert('1 page export costs ₹20', computeExportPrice(1) === 20);
-  assert('5 page export costs ₹20', computeExportPrice(5) === 20);
-  assert('10 page export costs ₹20', computeExportPrice(10) === 20);
-  assert('11 page export costs ₹40', computeExportPrice(11) === 40);
-  assert('20 page export costs ₹40', computeExportPrice(20) === 40);
-  assert('21 page export costs ₹60', computeExportPrice(21) === 60);
-  assert('100 page export costs ₹200', computeExportPrice(100) === 200);
+  assert('1 page export costs ₹500', computeExportPrice(1) === 500);
+  assert('5 page export costs ₹500', computeExportPrice(5) === 500);
+  assert('10 page export costs ₹500', computeExportPrice(10) === 500);
+  assert('11 page export costs ₹1000', computeExportPrice(11) === 1000);
+  assert('20 page export costs ₹1000', computeExportPrice(20) === 1000);
+  assert('21 page export costs ₹1500', computeExportPrice(21) === 1500);
+  assert('100 page export costs ₹5000', computeExportPrice(100) === 5000);
 
   // ── 4. Log Secret Masking / Sanitization ──
   function sanitizeLog(text: string): string {

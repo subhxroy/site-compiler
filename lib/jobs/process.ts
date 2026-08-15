@@ -169,7 +169,7 @@ export async function processExportJob(jobId: string): Promise<void> {
     const zipSizeKb = Math.round(stat.size / 1024);
 
     const pageCount = htmlResult.pageCount || (crawlResult.pages && crawlResult.pages.length) || 1;
-    const amount = Math.max(20, Math.ceil(pageCount / 10) * 20);
+    const amount = Math.max(500, Math.ceil(pageCount / 10) * 500);
 
     updateJob(
       jobId,

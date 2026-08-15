@@ -85,9 +85,9 @@ export function softwareApplicationSchema() {
       {
         '@type': 'Offer',
         name: 'Export Tier',
-        price: '20',
+        price: '500',
         priceCurrency: 'INR',
-        description: '₹20 per 10 pages with complete asset bundle and clean source code.',
+        description: '₹500 per 10 pages with complete asset bundle and clean source code.',
       },
     ],
   };

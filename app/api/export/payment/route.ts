@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     // Never trust client-supplied amount. Recompute from a clamped pageCount so
     // an attacker can't under-report the price to ₹1 in the approval record.
     const safePageCount = Math.min(Math.max(1, Math.floor(Number(pageCount) || 1)), 100000);
-    const amount = Math.max(20, Math.ceil(safePageCount / 10) * 20);
+    const amount = Math.max(500, Math.ceil(safePageCount / 10) * 500);
 
     // Update in-memory job store (UTR is not logged/returned to the client)
     updateJob(jobId, {
