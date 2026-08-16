@@ -376,9 +376,11 @@ Playwright crawler:
 ### `lib/generator/html/build.ts`
 - `buildHtmlExport`. Injects:
   - Native `@font-face` rules preserved directly from source `<style data-framer-font-css>` without generic fallbacks.
-  - `CRITICAL_OVERRIDE_CSS` with id `sitecompiler-critical` (smooth scroll, `overflow-x: clip`, visibility/opacity reveal fix without blanket `transform: none` or `filter: none` overrides that break 3D layout or scroll filters).
-- Outputs hydrated `index.html` + subpages, consolidated `styles.css`, and `script.js` (Universal Animation Shim v3.0).
-- **Universal Animation Shim v3.0 features**:
+  - `CRITICAL_OVERRIDE_CSS` with id `sitecompiler-critical` (smooth scroll, `overflow-x: clip`, visibility/opacity reveal fix without blanket `position: fixed` or `transform: none` overrides that break in-flow navbars or 3D layout).
+- Outputs hydrated `index.html` + subpages, consolidated `styles.css`, and `script.js` (Universal Animation Shim v3.5).
+- **Character-Exact HTML Serialization**: HTML output is serialized using Cheerio's token-exact `$.html()`, completely avoiding destructive multi-line Prettier indentation that corrupts `white-space: pre` / `pre-wrap` inline headings and paragraphs.
+- **Universal Animation Shim v3.5 features**:
+  - `init3DCarouselAndSlider()`: Autonomous 60fps RAF 3D cylindrical carousel and perspective slider engine. Detects `[data-framer-name="Circle"]`, `[data-framer-name="Slider"]`, and 3D rotated cards; provides smooth auto-rotation, pointer/touch dragging with momentum, and hover pause/resume.
   - `getFramerHashes()`: dynamically parses responsive breakpoint hashes from `<style data-framer-breakpoint-css>` at runtime so responsive show/hide rules stay aligned across Framer updates.
   - `initFramerAvatar()`: 60fps RAF Lerp scroll engine (`requestAnimationFrame` with damping factor `0.14`). Avatar begins in moody Black & White (`grayscale(100%) contrast(1.08) brightness(0.92)` at scale `0.75`), and smoothly dissolves into full vibrant color (`grayscale(0%)` / `none`) and expands to scale `1.0` as the user scrolls past the hero section.
   - `initScrollReveal()`: IntersectionObserver reveal for elements while preserving custom filter animations on avatar components.
