@@ -330,7 +330,11 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
     user-select: text !important;
     pointer-events: auto !important;
     cursor: text !important;
-    transition: outline 0.15s ease, background-color 0.15s ease !important;
+    caret-color: #ff6363 !important;
+    transition: outline 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease !important;
+  }
+  span[data-sc-id] {
+    display: inline-block !important;
   }
   [data-sc-id] * {
     -webkit-user-select: text !important;
@@ -340,13 +344,13 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
   [data-sc-id]:hover {
     outline: 2px dashed #ff6363 !important;
     outline-offset: 3px !important;
-    cursor: text !important;
+    background-color: rgba(255, 99, 99, 0.08) !important;
   }
   [data-sc-id]:focus, [data-sc-id]:focus-visible {
     outline: 2px solid #ff6363 !important;
     outline-offset: 3px !important;
-    background-color: rgba(255, 99, 99, 0.15) !important;
-    cursor: text !important;
+    background-color: rgba(255, 99, 99, 0.18) !important;
+    box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
   }
   img[data-sc-id] {
     cursor: pointer !important;
@@ -356,7 +360,8 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
   img[data-sc-id]:hover {
     outline: 2px solid #ff6363 !important;
     outline-offset: 3px !important;
-    filter: brightness(1.08) !important;
+    filter: brightness(1.1) !important;
+    box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
   }
 </style>
 <script id="sitecompiler-editor-bridge-js">
