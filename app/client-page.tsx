@@ -226,7 +226,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   const [savedToFirebase, setSavedToFirebase] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   // Restore job state on page load or refresh
   useEffect(() => {
@@ -423,7 +423,9 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   }, [loading, job?.status, job]);
 
   useEffect(() => {
-    if (tab === 'logs') logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (tab === 'logs' && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
   }, [job?.logs, tab]);
 
   // Require Sign In before export
@@ -980,13 +982,15 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   />
                 </div>
               ) : tab === 'logs' ? (
-                <div className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5">
+                <div
+                  ref={logContainerRef}
+                  className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5"
+                >
                   {job.logs.map((l, idx) => (
                     <div key={idx} className="leading-relaxed">
                       {formatLogLine(l)}
                     </div>
                   ))}
-                  <div ref={logEndRef} />
                 </div>
               ) : (
                 /* Quality & Telemetry Stats Tab */

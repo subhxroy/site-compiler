@@ -46,17 +46,26 @@ function isAllowedOrigin(origin: string | undefined, callback: (err: Error | nul
   try {
     const u = new URL(origin);
     // Always allow local dev
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '0.0.0.0') {
       callback(null, true);
       return;
     }
-    // Allow Netlify production domains and custom domain sitecompiler.app
-    if (u.hostname === 'sitecompiler.app' || u.hostname === 'www.sitecompiler.app' || u.hostname.endsWith('.netlify.app')) {
+    // Allow production domains
+    if (
+      u.hostname === 'sitecompiler.app' ||
+      u.hostname === 'www.sitecompiler.app' ||
+      u.hostname === 'sitecompiler.dev' ||
+      u.hostname === 'www.sitecompiler.dev' ||
+      u.hostname.endsWith('.netlify.app') ||
+      u.hostname.endsWith('.vercel.app') ||
+      u.hostname.endsWith('.onrender.com') ||
+      u.hostname.endsWith('subhxroy.com')
+    ) {
       callback(null, true);
       return;
     }
-    // Allow the configured frontend URL (set in Render env as FRONTEND_URL)
-    const frontendUrl = process.env.FRONTEND_URL || 'https://site-compiler.netlify.app';
+    // Allow the configured frontend URL (set in Render env as FRONTEND_URL or NEXT_PUBLIC_SITE_URL)
+    const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://site-compiler.netlify.app';
     if (frontendUrl) {
       try {
         if (new URL(frontendUrl).origin === u.origin) {
@@ -87,9 +96,12 @@ app.use(
 app.use(express.json());
 
 // ── Security Headers Middleware ─────────────────────────────────────────────
-app.use((_req: Request, res: Response, next: NextFunction) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // Allow framing for preview and interactive editor iframes
+  if (!req.path.includes('/preview')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();

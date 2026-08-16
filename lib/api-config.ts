@@ -1,24 +1,36 @@
 /**
  * Utility for resolving backend API URLs.
- * When deployed on Netlify (Frontend) with Render (Backend), process.env.NEXT_PUBLIC_API_URL
- * or process.env.BACKEND_URL points to the Render service origin (https://site-compiler.onrender.com).
- * If running on localhost, it falls back to relative paths for 100% local execution.
+ * Dynamically switches between local relative paths (when running locally)
+ * and the live Render backend service (https://site-compiler.onrender.com)
+ * when deployed online on Netlify, Vercel, or custom domains.
  */
 
-// Resolution order:
-//   1. Explicit NEXT_PUBLIC_API_URL / BACKEND_URL override (optional)
-//   2. Local dev (next dev, NODE_ENV=development): '' so routes run the job
-//      processor in-process via dynamic import (uses local Playwright).
-//   3. Production (NODE_ENV=production): the Render backend origin, so the
-//      Netlify serverless functions always proxy — no dashboard env var needed.
+export const DEFAULT_RENDER_BACKEND = 'https://site-compiler.onrender.com';
+
+export function isServerlessEnvironment(): boolean {
+  return !!(
+    process.env.NETLIFY ||
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.RENDER
+  );
+}
+
+// Server-to-server proxy base URL
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.BACKEND_URL ||
-  ''
+  process.env.API_BASE_URL ||
+  (process.env.NODE_ENV === 'production' && (process.env.NETLIFY || process.env.VERCEL)
+    ? DEFAULT_RENDER_BACKEND
+    : '')
 ).replace(/\/$/, '');
 
+// Browser-facing direct backend URL
 export const RENDER_BACKEND_URL = (
   process.env.NEXT_PUBLIC_RENDER_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.BACKEND_URL ||
   ''
 ).replace(/\/$/, '');
 
@@ -29,8 +41,7 @@ export function getApiUrl(path: string): string {
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // In the browser, always use relative paths (/api/...) so Next.js API routes on Netlify
-  // proxy requests server-to-server to the Render backend, preventing CORS and direct fetch errors.
+  // In the browser, relative paths (/api/...) use same-origin proxy
   if (typeof window !== 'undefined') {
     return cleanPath;
   }
@@ -40,18 +51,29 @@ export function getApiUrl(path: string): string {
 
 /**
  * Returns the direct Render backend URL for browser-side requests that must
- * bypass Netlify's 10-second serverless function timeout (e.g. export job creation).
- * Falls back to the relative Netlify proxy path when RENDER_BACKEND_URL is not set.
+ * bypass Netlify/Vercel serverless function timeouts (e.g. export job creation, polling, preview).
+ * Automatically resolves to the local path when on localhost, and to the Render backend when on live site.
  */
 export function getDirectBackendUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (typeof window !== 'undefined') {
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '0.0.0.0';
+
+    if (isLocalhost && !RENDER_BACKEND_URL) {
+      return cleanPath;
+    }
+
+    const targetBackend = RENDER_BACKEND_URL || DEFAULT_RENDER_BACKEND;
+    return `${targetBackend}${cleanPath}`;
+  }
+
   if (RENDER_BACKEND_URL) {
     return `${RENDER_BACKEND_URL}${cleanPath}`;
   }
-  // Local dev fallback: use relative path (Next.js dev server handles it in-process)
-  return cleanPath;
-}
 
-export function isServerlessEnvironment(): boolean {
-  return !!(process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  return cleanPath;
 }
