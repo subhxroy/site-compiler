@@ -38,11 +38,30 @@ export interface BuildHtmlResult {
 // ────────────────────────────────────────────────────────────────────────────
 const CRITICAL_OVERRIDE_CSS = `
 <style id="sitecompiler-critical">
-  /* Smooth scroll */
-  html { scroll-behavior: smooth; }
-
-  /* Prevent horizontal overflow while preserving fixed/sticky elements */
-  html, body { overflow-x: clip !important; }
+  /* ── Universal Native Scroll Normalization ── */
+  html {
+    scroll-behavior: smooth !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100% !important;
+    position: static !important;
+    overscroll-behavior: auto !important;
+  }
+  body,
+  body.loaded,
+  html.loaded body,
+  body[class*="loaded"],
+  body[class*="page-loaded"] {
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
+    position: relative !important;
+    overscroll-behavior: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
 
   /* ── Framer appear-animation: reveal hidden initial states ──
      IMPORTANT: We ONLY reveal opacity/visibility/filter here.
@@ -115,20 +134,23 @@ const CRITICAL_OVERRIDE_CSS = `
   }
 
   /* ── GSAP ScrollSmoother / LocomotiveScroll static normalization ── */
-  #smooth-wrapper {
+  #smooth-wrapper, .smooth-wrapper {
     position: static !important;
     inset: auto !important;
     width: 100% !important;
     height: auto !important;
+    min-height: auto !important;
     overflow: visible !important;
   }
-  #smooth-content {
+  #smooth-content, .smooth-content {
     position: static !important;
     transform: none !important;
     translate: none !important;
     rotate: none !important;
     scale: none !important;
     width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
     overflow: visible !important;
   }
 
@@ -232,6 +254,33 @@ const ANIMATION_SHIM_JS = `
       window.addEventListener('DOMContentLoaded', function () {
         if (document.body) document.body.appendChild(dummyWrap);
       });
+    }
+  }
+
+  // ── Polyfill ScrollSmoother & ScrollTrigger.normalizeScroll to ensure 100% native scrolling ──
+  if (typeof window !== 'undefined') {
+    if (!window.ScrollSmoother) {
+      window.ScrollSmoother = {
+        create: function() {
+          return {
+            scrollTop: function(val) {
+              if (typeof val === 'number') window.scrollTo(0, val);
+              return window.scrollY;
+            },
+            scrollTo: function(target, smooth) {
+              if (typeof target === 'number') window.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'auto' });
+            },
+            paused: function() { return false; },
+            kill: function() {},
+            effects: function() {},
+            wrapper: function() { return document.querySelector('#smooth-wrapper') || document.body; },
+            content: function() { return document.querySelector('#smooth-content') || document.body; }
+          };
+        },
+        get: function() {
+          return window.ScrollSmoother.create();
+        }
+      };
     }
   }
 
@@ -889,8 +938,8 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     // ── Inject fonts, critical CSS, and consolidated styles ──
     // Note: Framer font @font-face rules are already embedded in the
     // captured inline <style data-framer-font-css> block — no injection needed.
-    $('head').append(CRITICAL_OVERRIDE_CSS);
     $('head').append('  <link rel="stylesheet" href="./styles.css">\n');
+    $('head').append(CRITICAL_OVERRIDE_CSS);
 
     // ── Inject animation shim ──
     $('body').append('  <script src="./script.js"></script>\n');

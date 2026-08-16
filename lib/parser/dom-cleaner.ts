@@ -158,12 +158,13 @@ export function cleanDom(
 
   const baseHost = new URL(baseUrl).hostname;
 
-  // 1. Remove ONLY analytics, tracking, & editor overlays
+  // 1. Remove analytics, tracking, editor overlays, & scroll-hijackers that break native scrolling
   const trackingKeywords = [
     'google-analytics', 'googletagmanager', 'gtag', 'ga.js', 'analytics.js',
     'facebook.net', 'fbevents', 'mixpanel', 'hotjar', 'segment.com', 'intercom',
     'clarity.ms', 'doubleclick', 'drift', 'hubspot',
-    'events.framer.com', 'framer.com/edit'
+    'events.framer.com', 'framer.com/edit',
+    'scrollsmoother', 'smoother-script', 'locomotive-scroll'
   ];
 
   $('script').each((_, el) => {
@@ -408,13 +409,19 @@ export function cleanDom(
     $el.attr('style', cleaned);
   });
 
-  $('body').each((_, el) => {
+  $('html, body').each((_, el) => {
     const $el = $(el);
     const style = $el.attr('style') || '';
     const cleaned = style
-      .replace(/height:\s*\d+px;?/gi, '')
-      .replace(/overscroll-behavior:\s*[^;]+;?/gi, '');
-    $el.attr('style', cleaned);
+      .replace(/height:\s*[^;]+;?/gi, '')
+      .replace(/overflow[^:]*:\s*[^;]+;?/gi, '')
+      .replace(/overscroll-behavior[^:]*:\s*[^;]+;?/gi, '')
+      .replace(/touch-action:\s*[^;]+;?/gi, '');
+    if (cleaned.trim()) {
+      $el.attr('style', cleaned);
+    } else {
+      $el.removeAttr('style');
+    }
   });
 
   // 11. Normalize pre-split rolling-text / split-text elements to avoid double-splitting on re-hydration
