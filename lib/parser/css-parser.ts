@@ -128,6 +128,11 @@ export function parseAndConsolidateCss(
             return `url("${local}")`;
           }
         }
+        if (!p1.startsWith('http://') && !p1.startsWith('https://') && !p1.startsWith('//')) {
+          try {
+            return `url("${new URL(p1, baseUrl).href}")`;
+          } catch {}
+        }
         return match;
       });
 
@@ -168,6 +173,11 @@ export function parseAndConsolidateCss(
         if (base && (p1.endsWith(base) || orig.endsWith(p1))) {
           return `url("${local}")`;
         }
+      }
+      if (!p1.startsWith('http://') && !p1.startsWith('https://') && !p1.startsWith('//')) {
+        try {
+          return `url("${new URL(p1, baseUrl).href}")`;
+        } catch {}
       }
       return match;
     });

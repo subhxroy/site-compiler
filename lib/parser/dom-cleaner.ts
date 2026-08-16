@@ -198,7 +198,7 @@ export function cleanDom(
 
   // 2. Helper to resolve asset URL to local relative path
   const resolveAssetUrl = (urlStr: string | undefined): string | undefined => {
-    if (!urlStr || urlStr.startsWith('data:')) return urlStr;
+    if (!urlStr || urlStr.startsWith('data:') || urlStr.startsWith('blob:') || urlStr.startsWith('#')) return urlStr;
 
     let absoluteUrl = urlStr;
     try {
@@ -208,9 +208,26 @@ export function cleanDom(
     if (assetMap[absoluteUrl]) return assetMap[absoluteUrl];
     if (assetMap[urlStr]) return assetMap[urlStr];
 
+    const cleanUrlStr = urlStr.split('?')[0].split('#')[0];
+    const urlBasename = cleanUrlStr.split('/').pop() || '';
+
     for (const [orig, local] of Object.entries(assetMap)) {
-      if (orig.endsWith(urlStr) || urlStr.endsWith(orig.split('?')[0].split('#')[0].split('/').pop() || '')) {
+      const origClean = orig.split('?')[0].split('#')[0];
+      if (origClean.endsWith(cleanUrlStr) || cleanUrlStr.endsWith(origClean.split('/').pop() || '')) {
         return local;
+      }
+      if (urlBasename && origClean.endsWith(urlBasename)) {
+        return local;
+      }
+    }
+
+    // If not found in local asset map and urlStr is a relative path or root-relative path,
+    // convert to absolute URL so it continues to load seamlessly from original host rather than failing on file:///
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://') && !urlStr.startsWith('//') && !urlStr.startsWith('data:')) {
+      try {
+        return new URL(urlStr, baseUrl).href;
+      } catch {
+        return urlStr;
       }
     }
 

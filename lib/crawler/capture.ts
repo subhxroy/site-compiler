@@ -866,6 +866,23 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }
         }
       } catch {}
+
+      // Universally discover all media assets (images, videos, fonts, icons) from all captured HTML pages
+      try {
+        const html = fs.readFileSync(cp.rawHtmlPath, 'utf-8');
+        const assetSrcRegex = /(?:src|href|poster|data-background|data-bg|data-src|data-srcset)=["']([^"']+)["']/gi;
+        let match;
+        while ((match = assetSrcRegex.exec(html)) !== null) {
+          const val = (match[1] || '').trim();
+          if (!val || val.startsWith('data:') || val.startsWith('blob:') || val.startsWith('#') || val.startsWith('javascript:')) continue;
+          if (/\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|mp[34]|webm|ogg|mov|woff2?|ttf|otf|eot|pdf)($|\?|#)/i.test(val)) {
+            try {
+              const abs = new URL(val, cp.url).href;
+              allDiscoveredAssetUrls.add(abs);
+            } catch {}
+          }
+        }
+      } catch {}
     }
 
     const cssPaths: string[] = [];
