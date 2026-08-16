@@ -45,7 +45,16 @@ export async function GET(
       const editorBridge = `
 <style id="sitecompiler-editor-bridge-css">
   [data-sc-id] {
-    transition: outline 0.15s ease, background 0.15s ease !important;
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    pointer-events: auto !important;
+    cursor: text !important;
+    transition: outline 0.15s ease, background-color 0.15s ease !important;
+  }
+  [data-sc-id] * {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    pointer-events: auto !important;
   }
   [data-sc-id]:hover {
     outline: 2px dashed #ff6363 !important;
@@ -55,19 +64,53 @@ export async function GET(
   [data-sc-id]:focus, [data-sc-id]:focus-visible {
     outline: 2px solid #ff6363 !important;
     outline-offset: 3px !important;
-    background-color: rgba(255, 99, 99, 0.12) !important;
+    background-color: rgba(255, 99, 99, 0.15) !important;
     cursor: text !important;
+  }
+  img[data-sc-id] {
+    cursor: pointer !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
   img[data-sc-id]:hover {
     outline: 2px solid #ff6363 !important;
     outline-offset: 3px !important;
-    cursor: pointer !important;
     filter: brightness(1.08) !important;
   }
 </style>
 <script id="sitecompiler-editor-bridge-js">
 (function() {
+  // Capture phase pointerdown to stop Framer / Motion drag handlers on editable text
+  window.addEventListener('pointerdown', function(e) {
+    const scNode = e.target.closest('[data-sc-id]');
+    if (scNode && scNode.tagName.toLowerCase() !== 'img') {
+      e.stopPropagation();
+    }
+  }, true);
+
+  // Capture phase click to stop link navigation and focus editable element
   window.addEventListener('click', function(e) {
+    const scNode = e.target.closest('[data-sc-id]');
+    if (scNode) {
+      const tag = scNode.tagName.toLowerCase();
+      if (tag === 'img') {
+        e.preventDefault();
+        e.stopPropagation();
+        window.parent.postMessage({
+          type: 'sc-select-image',
+          nodeId: scNode.getAttribute('data-sc-id'),
+          src: scNode.getAttribute('src') || ''
+        }, '*');
+        return;
+      } else {
+        e.preventDefault();
+        e.stopPropagation();
+        scNode.setAttribute('contenteditable', 'true');
+        scNode.focus();
+        return;
+      }
+    }
+
     const anchor = e.target.closest('a');
     if (anchor) {
       e.preventDefault();
@@ -84,31 +127,14 @@ export async function GET(
       const tag = el.tagName.toLowerCase();
 
       if (tag === 'img') {
-        if (!el.getAttribute('data-sc-bound')) {
-          el.setAttribute('data-sc-bound', '1');
-          el.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            window.parent.postMessage({
-              type: 'sc-select-image',
-              nodeId: id,
-              src: el.getAttribute('src') || ''
-            }, '*');
-          }, true);
-        }
+        el.style.cursor = 'pointer';
       } else {
+        el.setAttribute('contenteditable', 'true');
+        el.setAttribute('spellcheck', 'false');
+
         if (!el.getAttribute('data-sc-bound')) {
           el.setAttribute('data-sc-bound', '1');
-          el.setAttribute('contenteditable', 'true');
-          el.setAttribute('spellcheck', 'false');
-
           let initialText = el.textContent;
-
-          el.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            el.focus();
-          }, true);
 
           el.addEventListener('input', function() {
             window.parent.postMessage({

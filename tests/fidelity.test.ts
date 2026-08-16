@@ -79,11 +79,20 @@ export async function runFidelityTests(): Promise<TestResult[]> {
   assert('script.js contains smooth scroll-reveal engine', scriptContent.includes('initScrollReveal'));
   assert('script.js contains responsive breakpoint engine', scriptContent.includes('applyBreakpoints'));
 
-  // ── 4. Exported HTML Formatting Integrity ──
+  // ── 4. Exported HTML Formatting Integrity & Visual CMS Generation ──
   const exportedHtml = fs.readFileSync(buildRes.indexHtmlPath, 'utf-8');
   assert('Exported HTML contains critical non-destructive CSS', exportedHtml.includes('id="sitecompiler-critical"'));
   assert('Exported HTML links script.js', exportedHtml.includes('src="./script.js"'));
   assert('Exported HTML links styles.css', exportedHtml.includes('href="./styles.css"'));
+
+  const editorHtmlPath = path.join(buildRes.outputDir, 'editor.html');
+  assert('Export output contains standalone editor.html', fs.existsSync(editorHtmlPath));
+  if (fs.existsSync(editorHtmlPath)) {
+    const editorContent = fs.readFileSync(editorHtmlPath, 'utf-8');
+    assert('editor.html contains Visual Content CMS', editorContent.includes('Visual Content CMS'));
+    assert('editor.html contains page selection dropdown', editorContent.includes('id="pageSelect"'));
+    assert('editor.html contains save & export action', editorContent.includes('Save &amp; Export Page'));
+  }
 
   // Cleanup
   try {

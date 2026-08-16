@@ -6,6 +6,7 @@ import { processAssets } from '../../parser/asset-pipeline';
 import { PageCaptured } from '../../crawler/types';
 import { tagEditableNodes } from '../../model/node-tagger';
 import { extractSiteModel, type SiteModel } from '../../model/extract-model';
+import { generateStandaloneEditorHtml, type EditorPageItem } from './editor-template';
 
 export interface BuildHtmlOptions {
   jobId: string;
@@ -794,6 +795,14 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     nodes: aggregatedNodes,
   };
   fs.writeFileSync(path.join(outputDir, 'site-model.json'), JSON.stringify(siteModel, null, 2), 'utf-8');
+
+  // Generate Standalone Visual Content CMS (editor.html) in output directory
+  const editorPages: EditorPageItem[] = pagesToProcess.map((p) => ({
+    htmlFilename: p.htmlFilename,
+    title: p.title || p.htmlFilename,
+  }));
+  const editorHtml = generateStandaloneEditorHtml(editorPages);
+  fs.writeFileSync(path.join(outputDir, 'editor.html'), editorHtml, 'utf-8');
 
   return {
     outputDir,

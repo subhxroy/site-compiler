@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { Navbar } from '@/components/navbar';
 import { Footer } from '@/components/footer';
+import { PaywallModal } from '@/components/paywall-modal';
 import {
   ArrowLeft,
   Save,
@@ -17,6 +18,7 @@ import {
   Loader2,
   Image as ImageIcon,
   Type,
+  Lock,
 } from 'lucide-react';
 
 interface PatchItem {
@@ -30,7 +32,7 @@ export default function EditExportPage() {
   const params = useParams();
   const jobId = typeof params?.jobId === 'string' ? params.jobId : '';
 
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [patches, setPatches] = useState<Map<string, PatchItem>>(new Map());
@@ -41,10 +43,29 @@ export default function EditExportPage() {
   const [imageInputSrc, setImageInputSrc] = useState('');
   const [previewVersion, setPreviewVersion] = useState(0);
   const [nodeCount, setNodeCount] = useState<number | null>(null);
+  const [jobData, setJobData] = useState<{
+    url: string;
+    pageCount: number;
+    paymentApproved?: boolean;
+    paymentSubmitted?: boolean;
+    price?: number;
+  } | null>(null);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
 
-  // 1. Fetch site model on mount to get instant editable node count
+  // 1. Fetch site model and job status on mount
   useEffect(() => {
     if (!jobId) return;
+
+    fetch(`/api/job/${jobId}/status`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.job) {
+          setJobData(data.job);
+        }
+      })
+      .catch(() => {});
+
     const fetchModel = async () => {
       try {
         const idToken = user ? await user.getIdToken() : '';
@@ -343,14 +364,33 @@ export default function EditExportPage() {
               )}
             </button>
 
-            <a
-              href={`/api/job/${jobId}/download`}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#17191f] hover:bg-[#20232a] border border-[#2a2c34] text-xs font-medium text-white transition-colors"
-              title="Download Updated ZIP"
+            <button
+              onClick={() => {
+                if (isAdmin || jobData?.paymentApproved) {
+                  const link = document.createElement('a');
+                  link.href = `/api/job/${jobId}/download`;
+                  link.setAttribute('download', `sitecompiler-${jobId}.zip`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                } else {
+                  setShowPaywall(true);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                isAdmin || jobData?.paymentApproved
+                  ? 'bg-[#17191f] hover:bg-[#20232a] border border-[#2a2c34] text-white'
+                  : 'bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363]'
+              }`}
+              title={isAdmin || jobData?.paymentApproved ? 'Download Updated ZIP' : 'Unlock & Download ZIP (Payment Required)'}
             >
-              <Download className="w-3.5 h-3.5 text-[#ff6363]" />
-              Download ZIP
-            </a>
+              {isAdmin || jobData?.paymentApproved ? (
+                <Download className="w-3.5 h-3.5 text-[#ff6363]" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-[#ff6363]" />
+              )}
+              {isAdmin || jobData?.paymentApproved ? 'Download ZIP' : 'Unlock ZIP'}
+            </button>
 
             <a
               href={`/api/job/${jobId}/preview`}
@@ -369,6 +409,13 @@ export default function EditExportPage() {
           <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs animate-fadeIn">
             <Check className="w-4 h-4 shrink-0" />
             Changes saved successfully! ZIP package re-compiled and ready for download.
+          </div>
+        )}
+
+        {paymentNotice && (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs animate-fadeIn">
+            <Check className="w-4 h-4 shrink-0" />
+            {paymentNotice}
           </div>
         )}
 
@@ -406,6 +453,29 @@ export default function EditExportPage() {
           />
         </div>
       </main>
+
+      {/* Paywall Modal for Locked Downloads */}
+      {jobData && (
+        <PaywallModal
+          isOpen={showPaywall}
+          onClose={() => setShowPaywall(false)}
+          jobId={jobId}
+          url={jobData.url || ''}
+          pageCount={jobData.pageCount || 1}
+          amount={jobData.price || Math.max(500, Math.ceil((jobData.pageCount || 1) / 10) * 500)}
+          userEmail={user?.email || undefined}
+          onPaymentSubmitted={() => {
+            setShowPaywall(false);
+            setPaymentNotice('Payment submitted! Awaiting admin approval. ZIP download will unlock upon verification.');
+            fetch(`/api/job/${jobId}/status`)
+              .then((r) => r.json())
+              .then((data) => {
+                if (data && data.job) setJobData(data.job);
+              })
+              .catch(() => {});
+          }}
+        />
+      )}
 
       {/* Image URL Update Modal */}
       {activeImageNode && (

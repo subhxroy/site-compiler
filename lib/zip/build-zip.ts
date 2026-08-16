@@ -129,6 +129,28 @@ tsconfig.json
 > Components are generated from the crawled DOM. Review and clean up
 > any hashed class names before shipping to production.`;
 
+  const cmsSection =
+    format === 'html'
+      ? `## 📝 Visual Content Editor (No-Code CMS Included)
+
+**No coding required!** You can edit text, headings, and images visually in your browser:
+
+1. **Serve this folder locally** (recommended for full font & asset loading):
+   \`\`\`bash
+   # Using Node.js (instant):
+   npx serve .
+   # OR using Python (built-in):
+   python -m http.server 8080
+   \`\`\`
+2. Open **<http://localhost:8080/editor.html>** (or <http://localhost:3000/editor.html>) in your browser.
+3. **Select the page** you want to edit from the top dropdown (e.g. \`index.html\`, \`about.html\`, \`projects.html\`).
+4. **Click directly on any text** to edit it in place.
+5. **Click on any image** to replace its URL or local path.
+6. Click **"Save & Export Page"** to download your updated HTML file, and replace the old file in this folder. That's it!
+
+---`
+      : '';
+
   return `# ${title}
 
 Exported by **SiteCompiler** — website source code exporter.
@@ -140,6 +162,8 @@ Exported by **SiteCompiler** — website source code exporter.
 - **Exported at:** ${exportedAt}
 
 ---
+
+${cmsSection}
 
 ## Previewing locally
 
@@ -158,8 +182,6 @@ Then open <http://localhost:8080> in your browser.
 ---
 
 ${editingSection}
-
----
 
 ${deploySection}
 

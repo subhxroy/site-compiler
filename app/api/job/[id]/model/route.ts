@@ -15,6 +15,11 @@ async function verifyModelAuth(req: Request, jobId: string): Promise<boolean> {
   const bypassHeader = req.headers.get('x-sitecompiler-admin-bypass');
   if (bypassSecret && bypassHeader === bypassSecret) return true;
 
+  if (job.paymentApproved) return true;
+
+  // If job was created anonymously (no user email attached), allow creator access via job ID
+  if (!job.userEmail) return true;
+
   const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
@@ -30,7 +35,7 @@ async function verifyModelAuth(req: Request, jobId: string): Promise<boolean> {
             .filter(Boolean);
           if (allowlist.includes(userEmail)) return true;
 
-          if (job.userEmail && job.userEmail.toLowerCase().trim() === userEmail) {
+          if (job.userEmail.toLowerCase().trim() === userEmail) {
             return true;
           }
         }
@@ -38,7 +43,6 @@ async function verifyModelAuth(req: Request, jobId: string): Promise<boolean> {
     }
   }
 
-  if (job.paymentApproved) return true;
   return false;
 }
 
