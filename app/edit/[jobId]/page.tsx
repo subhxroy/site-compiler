@@ -4,8 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { Navbar } from '@/components/navbar';
-import { Footer } from '@/components/footer';
 import { PaywallModal } from '@/components/paywall-modal';
 import {
   ArrowLeft,
@@ -125,12 +123,88 @@ export default function EditExportPage() {
       const iframeDoc = iframeRef.current?.contentDocument;
       if (!iframeDoc) return;
 
+      if (!iframeDoc.getElementById('sitecompiler-editor-bridge-css')) {
+        const styleEl = iframeDoc.createElement('style');
+        styleEl.id = 'sitecompiler-editor-bridge-css';
+        styleEl.textContent = `
+          [data-sc-id] {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            pointer-events: auto !important;
+            cursor: text !important;
+            caret-color: #ff6363 !important;
+            transition: outline 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease !important;
+          }
+          span[data-sc-id] {
+            display: inline-block !important;
+          }
+          [data-sc-id] * {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            pointer-events: auto !important;
+          }
+          [data-sc-id]:hover {
+            outline: 2px dashed #ff6363 !important;
+            outline-offset: 3px !important;
+            background-color: rgba(255, 99, 99, 0.08) !important;
+          }
+          [data-sc-id]:focus, [data-sc-id]:focus-visible {
+            outline: 2px solid #ff6363 !important;
+            outline-offset: 3px !important;
+            background-color: rgba(255, 99, 99, 0.18) !important;
+            box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
+          }
+          img[data-sc-id] {
+            cursor: pointer !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+          }
+          img[data-sc-id]:hover {
+            outline: 2px solid #ff6363 !important;
+            outline-offset: 3px !important;
+            filter: brightness(1.1) !important;
+            box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
+          }
+        `;
+        (iframeDoc.head || iframeDoc.documentElement).appendChild(styleEl);
+      }
+
       if (!iframeDoc.getElementById('sitecompiler-editor-bridge-js')) {
         const bridgeScript = iframeDoc.createElement('script');
         bridgeScript.id = 'sitecompiler-editor-bridge-js';
         bridgeScript.textContent = `
           (function() {
+            window.addEventListener('pointerdown', function(e) {
+              const scNode = e.target.closest('[data-sc-id]');
+              if (scNode && scNode.tagName.toLowerCase() !== 'img') {
+                e.stopPropagation();
+              }
+            }, true);
+
             window.addEventListener('click', function(e) {
+              const scNode = e.target.closest('[data-sc-id]');
+              if (scNode) {
+                const tag = scNode.tagName.toLowerCase();
+                if (tag === 'img') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.parent.postMessage({
+                    type: 'sc-select-image',
+                    nodeId: scNode.getAttribute('data-sc-id'),
+                    src: scNode.getAttribute('src') || ''
+                  }, '*');
+                  return;
+                } else {
+                  const anchor = scNode.closest('a');
+                  if (anchor) {
+                    e.preventDefault();
+                  }
+                  scNode.setAttribute('contenteditable', 'true');
+                  scNode.focus();
+                  return;
+                }
+              }
+
               const anchor = e.target.closest('a');
               if (anchor) {
                 e.preventDefault();
@@ -146,32 +220,12 @@ export default function EditExportPage() {
                 const id = el.getAttribute('data-sc-id');
                 const tag = el.tagName.toLowerCase();
 
-                if (tag === 'img') {
+                if (tag !== 'img') {
                   if (!el.getAttribute('data-sc-bound')) {
                     el.setAttribute('data-sc-bound', '1');
-                    el.addEventListener('click', function(e) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.parent.postMessage({
-                        type: 'sc-select-image',
-                        nodeId: id,
-                        src: el.getAttribute('src') || ''
-                      }, '*');
-                    }, true);
-                  }
-                } else {
-                  if (!el.getAttribute('data-sc-bound')) {
-                    el.setAttribute('data-sc-bound', '1');
-                    el.setAttribute('contenteditable', 'true');
                     el.setAttribute('spellcheck', 'false');
 
                     let initialText = el.textContent;
-
-                    el.addEventListener('click', function(e) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      el.focus();
-                    }, true);
 
                     el.addEventListener('input', function() {
                       window.parent.postMessage({
@@ -227,9 +281,11 @@ export default function EditExportPage() {
             }, 300);
           })();
         `;
-        iframeDoc.body.appendChild(bridgeScript);
+        (iframeDoc.body || iframeDoc.documentElement).appendChild(bridgeScript);
       }
-    } catch {}
+    } catch {
+      // Ignore cross-origin iframe access errors
+    }
   };
 
   // 3. Save pending patches to server
@@ -303,8 +359,6 @@ export default function EditExportPage() {
 
   return (
     <div className="min-h-screen bg-[#07080a] text-white flex flex-col font-sans">
-      <Navbar />
-
       <main className="flex-1 flex flex-col pt-24 pb-8 px-4 sm:px-6 max-w-[1400px] w-full mx-auto space-y-4">
         {/* Top Control Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-[#0e1014] border border-[#22242a] shadow-xl">
@@ -514,8 +568,6 @@ export default function EditExportPage() {
           </div>
         </div>
       )}
-
-      <Footer />
     </div>
   );
 }

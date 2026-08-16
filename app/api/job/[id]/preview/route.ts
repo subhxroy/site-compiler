@@ -14,35 +14,10 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid job id' }, { status: 400 });
   }
 
-  if (API_BASE_URL) {
-    try {
-      const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/preview`);
-      if (backendRes.ok) {
-        const text = await backendRes.text();
-        return new NextResponse(text, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
-      }
-    } catch {}
-  }
-
   const url = new URL(req.url);
   const isEditMode = url.searchParams.get('edit') === '1';
 
-  const exportHtmlPath = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export', 'index.html');
-  if (fs.existsSync(exportHtmlPath)) {
-    let htmlContent = fs.readFileSync(exportHtmlPath, 'utf-8');
-    if (!htmlContent.includes('<base ') && htmlContent.includes('<head>')) {
-      htmlContent = htmlContent.replace('<head>', `<head>\n    <base href="/api/job/${id}/preview/">`);
-    } else if (!htmlContent.includes('<base ') && htmlContent.includes('<head ')) {
-      htmlContent = htmlContent.replace(/<head[^>]*>/, `$&\\n    <base href="/api/job/${id}/preview/">`);
-    }
-
-    if (isEditMode) {
-      const editorBridge = `
+  const editorBridgeStyle = `
 <style id="sitecompiler-editor-bridge-css">
   [data-sc-id] {
     -webkit-user-select: text !important;
@@ -82,10 +57,11 @@ export async function GET(
     filter: brightness(1.1) !important;
     box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
   }
-</style>
+</style>`;
+
+  const editorBridgeScript = `
 <script id="sitecompiler-editor-bridge-js">
 (function() {
-  // Capture phase pointerdown to stop Framer / Motion drag handlers on editable text
   window.addEventListener('pointerdown', function(e) {
     const scNode = e.target.closest('[data-sc-id]');
     if (scNode && scNode.tagName.toLowerCase() !== 'img') {
@@ -93,7 +69,6 @@ export async function GET(
     }
   }, true);
 
-  // Capture phase click to stop link navigation and focus editable element
   window.addEventListener('click', function(e) {
     const scNode = e.target.closest('[data-sc-id]');
     if (scNode) {
@@ -108,8 +83,10 @@ export async function GET(
         }, '*');
         return;
       } else {
-        e.preventDefault();
-        e.stopPropagation();
+        const anchor = scNode.closest('a');
+        if (anchor) {
+          e.preventDefault();
+        }
         scNode.setAttribute('contenteditable', 'true');
         scNode.focus();
         return;
@@ -198,11 +175,52 @@ export async function GET(
     if (checks > 10) clearInterval(interval);
   }, 300);
 })();
-</script>
-`;
-      htmlContent = htmlContent.includes('</body>')
-        ? htmlContent.replace('</body>', `${editorBridge}</body>`)
-        : `${htmlContent}${editorBridge}`;
+</script>`;
+
+  function injectBridge(html: string): string {
+    let res = html;
+    if (!res.includes('sitecompiler-editor-bridge-css')) {
+      res = res.includes('</head>')
+        ? res.replace('</head>', `${editorBridgeStyle}</head>`)
+        : `${editorBridgeStyle}${res}`;
+    }
+    if (!res.includes('sitecompiler-editor-bridge-js')) {
+      res = res.includes('</body>')
+        ? res.replace('</body>', `${editorBridgeScript}</body>`)
+        : `${res}${editorBridgeScript}`;
+    }
+    return res;
+  }
+
+  if (API_BASE_URL) {
+    try {
+      const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/preview${url.search}`);
+      if (backendRes.ok) {
+        let text = await backendRes.text();
+        if (isEditMode) {
+          text = injectBridge(text);
+        }
+        return new NextResponse(text, {
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': isEditMode ? 'no-cache, no-store, must-revalidate' : 'public, max-age=600',
+          },
+        });
+      }
+    } catch {}
+  }
+
+  const exportHtmlPath = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export', 'index.html');
+  if (fs.existsSync(exportHtmlPath)) {
+    let htmlContent = fs.readFileSync(exportHtmlPath, 'utf-8');
+    if (!htmlContent.includes('<base ') && htmlContent.includes('<head>')) {
+      htmlContent = htmlContent.replace('<head>', `<head>\n    <base href="/api/job/${id}/preview/">`);
+    } else if (!htmlContent.includes('<base ') && htmlContent.includes('<head ')) {
+      htmlContent = htmlContent.replace(/<head[^>]*>/, `$&\\n    <base href="/api/job/${id}/preview/">`);
+    }
+
+    if (isEditMode) {
+      htmlContent = injectBridge(htmlContent);
     }
 
     return new NextResponse(htmlContent, {
