@@ -505,19 +505,12 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }, isEntry);
         } catch {}
 
-        // RC5 fix: Wait for JS hydration using network-idle + image-resolved polling
-        // instead of a fixed 600ms delay which is too short on slow networks.
-        try {
-          await page.waitForLoadState('networkidle', { timeout: 4000 });
-        } catch {}
-        try {
-          await page.waitForFunction(() => {
-            // Wait until at least some images have resolved src and document is complete
-            const imgs = Array.from(document.querySelectorAll('img'));
-            const resolvedCount = imgs.filter(i => i.src && !i.src.startsWith('data:') && i.complete).length;
-            return document.readyState === 'complete' && (imgs.length === 0 || resolvedCount > 0);
-          }, { timeout: 4000 });
-        } catch {}
+        // RC5 fix: Short network-idle wait — capped tightly so sites with continuous
+        // API polling don't eat the full timeout on every page.
+        // Entry page gets 1200ms, subpages get 600ms (they share the same JS bundle
+        // already loaded on entry so networkidle settles much faster).
+        const idleTimeout = isEntry ? 1200 : 600;
+        try { await page.waitForLoadState('networkidle', { timeout: idleTimeout }); } catch {}
 
         // Dismiss cookie/GDPR banners
         const cookieDismissSelectors = [
@@ -540,28 +533,32 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           } catch {}
         }
 
-        // RC6 fix: Fast-scroll BEFORE page.content() so IntersectionObserver-triggered
-        // lazy images and data-src swaps are resolved BEFORE we snapshot the DOM.
-        // Previously the scroll ran AFTER page.content(), so lazy images were captured
-        // with src="" or data-src="..." instead of their real URLs.
+        // RC6 fix: Fast-scroll BEFORE page.content() so IntersectionObserver lazy images
+        // resolve before the DOM snapshot.
+        // Entry page: full bidirectional pass (catches above-fold + below-fold lazy loads).
+        // Subpages:   single downward pass only — fast, avoids timeout budget overrun.
         try {
-          await page.evaluate(async () => {
+          await page.evaluate(async (isEntryPage: boolean) => {
             const maxScroll = Math.min(
               Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-              8000
+              isEntryPage ? 8000 : 5000
             );
-            // Scroll down in steps to trigger IntersectionObserver on every lazy image
-            for (let y = 0; y < maxScroll; y += 300) {
+            // Downward pass: trigger IntersectionObserver on every lazy image
+            const step = isEntryPage ? 300 : 400;
+            const delay = isEntryPage ? 50 : 40;
+            for (let y = 0; y < maxScroll; y += step) {
               window.scrollTo({ top: y, behavior: 'instant' });
-              await new Promise((r) => setTimeout(r, 60));
+              await new Promise((r) => setTimeout(r, delay));
             }
-            // Second pass: scroll back up slowly to catch above-fold lazy loads
-            for (let y = maxScroll; y >= 0; y -= 600) {
-              window.scrollTo({ top: y, behavior: 'instant' });
-              await new Promise((r) => setTimeout(r, 40));
+            // Entry page only: one upward pass to catch above-fold lazy loads
+            if (isEntryPage) {
+              for (let y = maxScroll; y >= 0; y -= 600) {
+                window.scrollTo({ top: y, behavior: 'instant' });
+                await new Promise((r) => setTimeout(r, 30));
+              }
             }
             window.scrollTo(0, 0);
-            await new Promise((r) => setTimeout(r, 300));
+            await new Promise((r) => setTimeout(r, 200));
 
             // Reset smooth scroll wrapper inline transformations so snapshot is clean
             const smoothWrapper = document.getElementById('smooth-wrapper');
@@ -582,13 +579,12 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
               document.body.style.height = 'auto';
               document.body.style.overflow = 'visible';
             }
-          });
+          }, isEntry);
         } catch {}
 
-        // Wait for any lazy-triggered network requests to settle after scroll
-        try {
-          await page.waitForLoadState('networkidle', { timeout: 2500 });
-        } catch {}
+        // Short settle after scroll — 800ms entry / 400ms subpages
+        // (replaces the old 2500ms networkidle that ran to timeout on polling sites)
+        await page.waitForTimeout(isEntry ? 800 : 400);
 
         // Clean up blocking preloader elements before DOM HTML snapshot
         try {
