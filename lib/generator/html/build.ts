@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import prettier from 'prettier';
 import { cleanDom } from '../../parser/dom-cleaner';
 import { parseAndConsolidateCss } from '../../parser/css-parser';
 import { processAssets } from '../../parser/asset-pipeline';
@@ -49,44 +48,13 @@ const CRITICAL_OVERRIDE_CSS = `
      We deliberately do NOT reset transform, because Framer uses transform
      for both animations AND layout positioning (e.g. translate(-50%,-50%) for
      centering, scale() for sizing hero images). Resetting transform blanket
-     breaks the layout of positioned elements (hero images overflow text, etc.).
-     The JS shim below handles animation-state transforms selectively. */
-  [data-framer-appear-id]:not([data-framer-layout-hint-center-x]) {
+     breaks the layout of positioned elements. */
+  [data-framer-appear-id] {
     opacity: 1 !important;
     visibility: visible !important;
-  }
-  /* Center-hinted elements: reveal opacity but preserve transform for centering */
-  [data-framer-appear-id][data-framer-layout-hint-center-x] {
-    opacity: 1 !important;
-    visibility: visible !important;
-  }
-
-  /* ── Framer centered floating navbar / pill elements ──
-     Framer uses transform:translateX(-50%) + JS-injected left:50% + position:fixed
-     for centering floating elements. In static export the JS never sets position/left,
-     so the element appears offset. We restore it here.
-     data-framer-layout-hint-center-x="true" is the canonical Framer center marker. */
-  [data-framer-layout-hint-center-x="true"] {
-    position: fixed !important;
-    top: 20px !important;
-    left: 50% !important;
-    z-index: 9999 !important;
-    /* The existing style="transform: translateX(-50%)" on the element handles horizontal centering */
-  }
-
-  /* The ssr-variant wrapper that holds the navbar should not create layout space */
-  .ssr-variant:has([data-framer-layout-hint-center-x]) {
-    pointer-events: none;
-    height: 0 !important;
-    overflow: visible !important;
-  }
-  .ssr-variant:has([data-framer-layout-hint-center-x]) > * {
-    pointer-events: auto;
   }
 
   /* ── Framer word-by-word text reveal (opacity: 0.001 start state) ── */
-  /* Only reset opacity, not transform — the word may have a translateY for slide-in
-     that will be handled by the IntersectionObserver shim */
   span[style*="opacity: 0.001"],
   span[style*="opacity:0.001"] {
     opacity: 1 !important;
@@ -138,8 +106,7 @@ const CRITICAL_OVERRIDE_CSS = `
     overflow: hidden !important;
   }
 
-  /* ── Scroll-reveal: initial states for IntersectionObserver script ──
-     Elements with translateY initial state (Framer / AOS / GSAP pattern) */
+  /* ── Scroll-reveal: initial states for IntersectionObserver script ── */
   [data-sitecompiler-reveal] {
     opacity: 0;
     transform: translateY(24px);
@@ -621,10 +588,76 @@ const ANIMATION_SHIM_JS = `
     overlay.addEventListener('click', function () { overlay.style.display = 'none'; });
   }
 
+  /* ── 13. Autonomous 3D Carousel / Perspective Cylinder Engine ── */
+  function init3DCarouselAndSlider() {
+    var circles = document.querySelectorAll(
+      '[data-framer-name="Circle"], [data-framer-name="Slider"], [data-framer-name*="Carousel"], [data-framer-name*="3D"]'
+    );
+    circles.forEach(function (circle) {
+      if (circle.getAttribute('data-3d-init')) return;
+      circle.setAttribute('data-3d-init', '1');
+
+      var isDragging = false;
+      var startX = 0;
+      var currentRotation = 0;
+      var autoRotateSpeed = 0.15;
+      var autoRotate = true;
+      var resumeTimer = null;
+
+      function updateTransform() {
+        circle.style.transform = 'perspective(1200px) rotateY(' + currentRotation.toFixed(2) + 'deg)';
+      }
+
+      function tick() {
+        if (autoRotate && !isDragging) {
+          currentRotation = (currentRotation + autoRotateSpeed) % 360;
+          updateTransform();
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+
+      var parentContainer = circle.parentElement || circle;
+      parentContainer.style.cursor = 'grab';
+
+      parentContainer.addEventListener('pointerdown', function (e) {
+        isDragging = true;
+        startX = e.clientX;
+        autoRotate = false;
+        parentContainer.style.cursor = 'grabbing';
+        if (resumeTimer) clearTimeout(resumeTimer);
+      });
+
+      window.addEventListener('pointermove', function (e) {
+        if (!isDragging) return;
+        var dx = e.clientX - startX;
+        startX = e.clientX;
+        currentRotation += dx * 0.35;
+        updateTransform();
+      });
+
+      window.addEventListener('pointerup', function () {
+        if (!isDragging) return;
+        isDragging = false;
+        parentContainer.style.cursor = 'grab';
+        resumeTimer = setTimeout(function () { autoRotate = true; }, 2500);
+      });
+
+      parentContainer.addEventListener('mouseenter', function () {
+        autoRotate = false;
+      });
+
+      parentContainer.addEventListener('mouseleave', function () {
+        if (!isDragging) autoRotate = true;
+      });
+    });
+  }
+
   /* ── Bootstrap ── */
   function init() {
     applyBreakpoints();
     initFramerAvatar();
+    init3DCarouselAndSlider();
     initScrollReveal();
     initScrollColourText();
     initAnchorScroll();
@@ -743,10 +776,8 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     // ── Inject animation shim ──
     $('body').append('  <script src="./script.js"></script>\n');
 
-    let htmlCode = $.html();
-    try {
-      htmlCode = await prettier.format(htmlCode, { parser: 'html', printWidth: 120 });
-    } catch {}
+    // Character-exact HTML serialization preserves token spacing without destructive multi-line indentation
+    const htmlCode = $.html();
 
     const destPath = path.join(outputDir, pageItem.htmlFilename);
     fs.writeFileSync(destPath, htmlCode, 'utf-8');

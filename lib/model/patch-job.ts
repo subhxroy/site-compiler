@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cheerio from 'cheerio';
-import prettier from 'prettier';
 import { applyPatches, PatchItem } from './apply-patch';
 import { extractSiteModel } from './extract-model';
 import { getJob, updateJob } from '../jobs/store';
@@ -84,11 +83,7 @@ export async function processJobPatches(jobId: string, patches: PatchItem[]): Pr
         $('body').append('  <script src="./script.js"></script>\n');
       }
 
-      let formattedHtml = $.html();
-      try {
-        formattedHtml = await prettier.format(formattedHtml, { parser: 'html', printWidth: 120 });
-      } catch {}
-
+      const formattedHtml = $.html();
       fs.writeFileSync(path.join(stagingDir, file), formattedHtml, 'utf-8');
     }
 

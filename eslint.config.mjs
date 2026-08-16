@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "admin-portal/out/**",
     // Generated crawl/export artifacts and browser binaries
     "exports/**",
+    "scratch/**",
     "temp/**",
     "downloads/**",
     "pw-browsers/**",

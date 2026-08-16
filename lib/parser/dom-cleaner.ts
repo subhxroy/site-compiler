@@ -358,43 +358,7 @@ export function simplifyNestedSpansAndWrappers($: cheerio.CheerioAPI): void {
   // 1. Remove Framer search index & redirect metadata tags from head
   $('meta[name*="framer-search-index"], meta[data-redirect-timezone]').remove();
 
-  // 2. Collapse redundant <span><span><span>text</span></span></span> wrappers
-  for (let iter = 0; iter < 5; iter++) {
-    let unnestedAny = false;
-    $('span').each((_, el) => {
-      const $el = $(el);
-      const children = $el.children();
-      if (children.length === 1 && children[0].tagName?.toLowerCase() === 'span') {
-        const $child = $(children[0]);
-        const parentClass = $el.attr('class') || '';
-        const childClass = $child.attr('class') || '';
-        if (!parentClass || parentClass.includes('framer-text') || !childClass) {
-          $el.replaceWith($child);
-          unnestedAny = true;
-        }
-      }
-    });
-    if (!unnestedAny) break;
-  }
-
-  // 3. Unwrap single-child framer container wrappers (e.g. framer-bcxrl8-container)
-  // IMPORTANT: Only unwrap containers with NO style attribute at all.
-  // Framer container divs frequently carry visual compositing properties in their
-  // inline style (mix-blend-mode, filter, perspective, isolation, overflow, z-index)
-  // that produce decorative effects (gradient glows, blend modes on images, etc.).
-  // Unwrapping these destroys the visual layer structure. We are conservative here
-  // and only collapse truly empty positional containers (no id, no style, 1 child).
-  $('div').each((_, el) => {
-    const $el = $(el);
-    const classAttr = $el.attr('class') || '';
-    const idAttr = $el.attr('id') || '';
-    const styleAttr = $el.attr('style') || '';
-    const children = $el.children();
-
-    // Only unwrap if: matches framer container pattern, has exactly 1 child,
-    // no id, and absolutely no style attribute (not even an empty one)
-    if (!idAttr && !styleAttr && children.length === 1 && /framer-[a-z0-9]+-container/i.test(classAttr)) {
-      $el.replaceWith($(children[0]));
-    }
-  });
+  // Note: We deliberately preserve the exact DOM element hierarchy (spans and container wrappers).
+  // Mutating or collapsing intermediate nodes causes React / Framer / Webflow client-side hydration
+  // to fail with React Error #405 (Hydration Mismatch) and destroys component animation ref attachments.
 }

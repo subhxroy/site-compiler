@@ -83,10 +83,15 @@ function normalizeUrl(urlStr: string): string {
   }
 }
 
-function sanitizeFilename(urlStr: string, index: number, defaultExt: string): string {
+function sanitizeFilename(urlStr: string, index: number, defaultExt: string, category?: string): string {
   try {
     const parsed = new URL(urlStr);
     let basename = path.basename(parsed.pathname).split('?')[0].split('#')[0];
+    if (category === 'scripts' && basename.includes('.')) {
+      // Keep exact script / module basename so internal ES module imports (import "./foo.mjs") resolve cleanly
+      const clean = basename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      if (clean.length > 0 && clean.length <= 120) return clean;
+    }
     if (!basename.includes('.')) {
       basename = `asset_${index}${defaultExt}`;
     } else {
@@ -937,7 +942,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           const ct = res.headers()['content-type'] || '';
           const category = getAssetCategory(assetUrl, ct);
           const ext = guessExtension(assetUrl, ct);
-          const filename = sanitizeFilename(assetUrl, assetNumber, ext);
+          const filename = sanitizeFilename(assetUrl, assetNumber, ext, category);
 
           const catDir =
             category === 'fonts' ? fontsDir :
