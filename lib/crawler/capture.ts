@@ -526,6 +526,26 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             }
             window.scrollTo(0, 0);
             await new Promise((r) => setTimeout(r, 200));
+
+            // Reset smooth scroll wrapper inline transformations
+            const smoothWrapper = document.getElementById('smooth-wrapper');
+            if (smoothWrapper) {
+              smoothWrapper.style.position = 'static';
+              smoothWrapper.style.overflow = 'visible';
+              smoothWrapper.style.inset = 'auto';
+              smoothWrapper.style.height = 'auto';
+            }
+            const smoothContent = document.getElementById('smooth-content');
+            if (smoothContent) {
+              smoothContent.style.transform = 'none';
+              smoothContent.style.translate = 'none';
+              smoothContent.style.position = 'static';
+              smoothContent.style.overflow = 'visible';
+            }
+            if (document.body) {
+              document.body.style.height = 'auto';
+              document.body.style.overflow = 'visible';
+            }
           });
         } catch {}
 
@@ -860,18 +880,44 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
     const externalStyles = collectedStylesheetData.filter((s): s is { type: 'link'; href: string } => s.type === 'link' && !!s.href);
     if (externalStyles.length > 0) {
-      const extResults = await Promise.all(
-        externalStyles.map(async (s) => {
-          try {
-            const assetSafety = await validateUrlForSsrfAsync(s.href);
-            if (!assetSafety.valid) return null;
-            const res = await context.request.get(s.href, { timeout: 8000 });
-            if (res.ok()) {
-              return await res.text();
+      const fetchCssRecursively = async (cssUrl: string, depth = 0): Promise<string> => {
+        if (depth > 5) return '';
+        try {
+          const assetSafety = await validateUrlForSsrfAsync(cssUrl);
+          if (!assetSafety.valid) return '';
+          const res = await context.request.get(cssUrl, { timeout: 8000 });
+          if (!res.ok()) return '';
+          let text = await res.text();
+
+          // Match @import url("...") and @import "..."
+          const importRegex = /@import\s+(?:url\(['"]?([^'"()]+)['"]?\)|['"]([^'"]+)['"]);?/gi;
+          let match;
+          const importsToFetch: Array<{ matchStr: string; subUrl: string }> = [];
+          while ((match = importRegex.exec(text)) !== null) {
+            const subPath = match[1] || match[2];
+            if (subPath && !subPath.startsWith('data:')) {
+              try {
+                const subUrl = new URL(subPath, cssUrl).href;
+                importsToFetch.push({ matchStr: match[0], subUrl });
+              } catch {}
             }
-          } catch {}
-          return null;
-        })
+          }
+
+          for (const item of importsToFetch) {
+            const subContent = await fetchCssRecursively(item.subUrl, depth + 1);
+            if (subContent) {
+              text = text.replace(item.matchStr, `/* @import ${item.subUrl} */\n${subContent}\n`);
+            }
+          }
+
+          return text;
+        } catch {
+          return '';
+        }
+      };
+
+      const extResults = await Promise.all(
+        externalStyles.map(async (s) => fetchCssRecursively(s.href))
       );
 
       for (const cssText of extResults) {

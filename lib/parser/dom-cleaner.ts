@@ -326,6 +326,31 @@ export function cleanDom(
     }
   });
 
+  // 8b. Rewrite data-background, data-bg, data-src, data-srcset, data-poster attributes
+  $('[data-background], [data-bg], [data-src], [data-srcset], [data-poster]').each((_, el) => {
+    const $el = $(el);
+    const dataBg = $el.attr('data-background');
+    if (dataBg) {
+      const res = resolveAssetUrl(dataBg);
+      if (res) $el.attr('data-background', res);
+    }
+    const bg = $el.attr('data-bg');
+    if (bg) {
+      const res = resolveAssetUrl(bg);
+      if (res) $el.attr('data-bg', res);
+    }
+    const dataSrc = $el.attr('data-src');
+    if (dataSrc) {
+      const res = resolveAssetUrl(dataSrc);
+      if (res) $el.attr('data-src', res);
+    }
+    const dataPoster = $el.attr('data-poster');
+    if (dataPoster) {
+      const res = resolveAssetUrl(dataPoster);
+      if (res) $el.attr('data-poster', res);
+    }
+  });
+
   // 9. Rewrite <script src="..."> and <link rel="modulepreload" href="...">
   $('script[src]').each((_, el) => {
     const src = $(el).attr('src');
@@ -342,7 +367,52 @@ export function cleanDom(
     }
   });
 
-  // 10. Simplify nested <span> wrappers and collapse single-child Framer positioning divs for human-editable code
+  // 10. Normalize Smooth Scroll wrappers (GSAP ScrollSmoother / LocomotiveScroll)
+  $('#smooth-wrapper').each((_, el) => {
+    const $el = $(el);
+    const style = $el.attr('style') || '';
+    const cleaned = style
+      .replace(/position:\s*fixed;?/gi, 'position: static;')
+      .replace(/overflow:\s*hidden;?/gi, 'overflow: visible;')
+      .replace(/inset:\s*[^;]+;?/gi, '')
+      .replace(/height:\s*100%;?/gi, 'height: auto;');
+    $el.attr('style', cleaned);
+  });
+
+  $('#smooth-content').each((_, el) => {
+    const $el = $(el);
+    const style = $el.attr('style') || '';
+    const cleaned = style
+      .replace(/transform:\s*matrix3d\([^)]+\);?/gi, '')
+      .replace(/transform:\s*translate3d\([^)]+\);?/gi, '')
+      .replace(/translate:\s*[^;]+;?/gi, '')
+      .replace(/scale:\s*[^;]+;?/gi, '')
+      .replace(/rotate:\s*[^;]+;?/gi, '');
+    $el.attr('style', cleaned);
+  });
+
+  $('body').each((_, el) => {
+    const $el = $(el);
+    const style = $el.attr('style') || '';
+    const cleaned = style
+      .replace(/height:\s*\d+px;?/gi, '')
+      .replace(/overscroll-behavior:\s*[^;]+;?/gi, '');
+    $el.attr('style', cleaned);
+  });
+
+  // 11. Normalize pre-split rolling-text / split-text elements to avoid double-splitting on re-hydration
+  $('.rolling-text, [class*="rolling-text"]').each((_, el) => {
+    const blocks = $(el).children('.block');
+    if (blocks.length >= 2) {
+      const firstText = $(blocks[0]).text().replace(/\s+/g, ' ').trim();
+      const secondText = $(blocks[1]).text().replace(/\s+/g, ' ').trim();
+      if (firstText === secondText && firstText.length > 0) {
+        $(el).empty().text(firstText);
+      }
+    }
+  });
+
+  // 12. Simplify nested <span> wrappers and collapse single-child Framer positioning divs for human-editable code
   simplifyNestedSpansAndWrappers($);
 
   const title = $('title').first().text().trim() || 'Exported Website';

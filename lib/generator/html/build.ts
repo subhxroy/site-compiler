@@ -107,6 +107,91 @@ const CRITICAL_OVERRIDE_CSS = `
     overflow: hidden !important;
   }
 
+  /* ── GSAP / Framework main container initial state normalization ── */
+  main, #main, .main-bg {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important;
+  }
+
+  /* ── GSAP ScrollSmoother / LocomotiveScroll static normalization ── */
+  #smooth-wrapper {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #smooth-content {
+    position: static !important;
+    transform: none !important;
+    translate: none !important;
+    rotate: none !important;
+    scale: none !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* ── Bootstrap navbar horizontal flex normalization for desktop ── */
+  nav.navbar {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+  }
+  nav.navbar .container,
+  nav.navbar .container-fluid {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+  }
+  @media (min-width: 992px) {
+    .navbar-expand-lg .navbar-collapse {
+      display: flex !important;
+      flex-basis: auto !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .navbar-expand-lg .navbar-nav {
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: center !important;
+      gap: 2rem !important;
+      margin: 0 auto !important;
+    }
+    .navbar-toggler {
+      display: none !important;
+    }
+  }
+
+  /* ── Creative navbar rolling text & marquee ── */
+  .rolling-text {
+    display: inline-block !important;
+    position: relative !important;
+    height: 1.4em !important;
+    line-height: 1.4em !important;
+    overflow: hidden !important;
+    vertical-align: middle !important;
+  }
+  .rolling-text .block {
+    display: flex !important;
+    height: 1.4em !important;
+    line-height: 1.4em !important;
+    align-items: center !important;
+    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+  }
+  .rolling-text .block:last-child {
+    position: absolute !important;
+    top: 100% !important;
+    left: 0 !important;
+    width: 100% !important;
+  }
+  .nav-link:hover .rolling-text .block,
+  .rolling-text:hover .block {
+    transform: translateY(-100%) !important;
+  }
+
   /* ── Scroll-reveal: initial states for IntersectionObserver script ── */
   [data-sitecompiler-reveal] {
     opacity: 0;
@@ -134,6 +219,21 @@ const ANIMATION_SHIM_JS = `
  */
 (function () {
   'use strict';
+
+  // ── Defensive polyfill for template scripts referencing missing progress-wrap SVG path ──
+  if (!document.querySelector('.progress-wrap')) {
+    var dummyWrap = document.createElement('div');
+    dummyWrap.className = 'progress-wrap';
+    dummyWrap.style.display = 'none';
+    dummyWrap.innerHTML = '<svg><path d="M0,0"></path></svg>';
+    if (document.body) {
+      document.body.appendChild(dummyWrap);
+    } else {
+      window.addEventListener('DOMContentLoaded', function () {
+        if (document.body) document.body.appendChild(dummyWrap);
+      });
+    }
+  }
 
   /* ── 1. Responsive breakpoint classes (Framer SSR) ── */
   // Read breakpoint hashes dynamically from the Framer-generated CSS block.
@@ -713,14 +813,32 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
   fs.writeFileSync(scriptJsPath, ANIMATION_SHIM_JS, 'utf-8');
 
   // 4. Build all pages
-  const pagesToProcess = pages.length > 0 ? pages : [{
-    url: baseUrl,
-    pathname: '/',
-    title: 'Exported Site',
-    htmlFilename: 'index.html',
-    rawHtmlPath: path.join(rawDir, 'page.html'),
-    meta: { title: 'Exported Site', canonicalUrl: null, metaTags: [], jsonLd: [] }
-  }];
+  const pagesRawDir = path.join(rawDir, 'pages');
+  let pagesToProcess = pages;
+  if (pagesToProcess.length === 0 && fs.existsSync(pagesRawDir)) {
+    const pageFiles = fs.readdirSync(pagesRawDir).filter((f) => f.endsWith('.html'));
+    if (pageFiles.length > 0) {
+      pagesToProcess = pageFiles.map((f) => ({
+        url: f === 'index.html' ? baseUrl : `${baseUrl.replace(/\/$/, '')}/${f.replace('.html', '')}`,
+        pathname: f === 'index.html' ? '/' : `/${f.replace('.html', '')}`,
+        title: f.replace('.html', ''),
+        htmlFilename: f,
+        rawHtmlPath: path.join(pagesRawDir, f),
+        meta: { title: f.replace('.html', ''), canonicalUrl: null, metaTags: [], jsonLd: [] },
+      }));
+    }
+  }
+
+  if (pagesToProcess.length === 0) {
+    pagesToProcess = [{
+      url: baseUrl,
+      pathname: '/',
+      title: 'Exported Site',
+      htmlFilename: 'index.html',
+      rawHtmlPath: path.join(rawDir, 'page.html'),
+      meta: { title: 'Exported Site', canonicalUrl: null, metaTags: [], jsonLd: [] }
+    }];
+  }
 
   let primaryCleanedHtml = '';
   let primaryIndexHtmlPath = path.join(outputDir, 'index.html');
