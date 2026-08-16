@@ -309,6 +309,140 @@ app.get(['/api/job/:id/preview', '/api/job/:id/preview/*'], (req: Request, res: 
     } else if (!htmlContent.includes('<base ') && htmlContent.includes('<head ')) {
       htmlContent = htmlContent.replace(/<head[^>]*>/, `$&\\n    <base href="/api/job/${id}/preview/">`);
     }
+
+    if (req.query.edit === '1') {
+      const editorBridge = `
+<style id="sitecompiler-editor-bridge-css">
+  [data-sc-id] {
+    transition: outline 0.15s ease, background 0.15s ease !important;
+  }
+  [data-sc-id]:hover {
+    outline: 2px dashed #ff6363 !important;
+    outline-offset: 3px !important;
+    cursor: text !important;
+  }
+  [data-sc-id]:focus, [data-sc-id]:focus-visible {
+    outline: 2px solid #ff6363 !important;
+    outline-offset: 3px !important;
+    background-color: rgba(255, 99, 99, 0.12) !important;
+    cursor: text !important;
+  }
+  img[data-sc-id]:hover {
+    outline: 2px solid #ff6363 !important;
+    outline-offset: 3px !important;
+    cursor: pointer !important;
+    filter: brightness(1.08) !important;
+  }
+</style>
+<script id="sitecompiler-editor-bridge-js">
+(function() {
+  window.addEventListener('click', function(e) {
+    const anchor = e.target.closest('a');
+    if (anchor) {
+      e.preventDefault();
+    }
+  }, true);
+
+  function bindEditableNodes() {
+    const editableNodes = document.querySelectorAll('[data-sc-id]');
+    let count = 0;
+
+    editableNodes.forEach(function(el) {
+      count++;
+      const id = el.getAttribute('data-sc-id');
+      const tag = el.tagName.toLowerCase();
+
+      if (tag === 'img') {
+        if (!el.getAttribute('data-sc-bound')) {
+          el.setAttribute('data-sc-bound', '1');
+          el.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.parent.postMessage({
+              type: 'sc-select-image',
+              nodeId: id,
+              src: el.getAttribute('src') || ''
+            }, '*');
+          }, true);
+        }
+      } else {
+        if (!el.getAttribute('data-sc-bound')) {
+          el.setAttribute('data-sc-bound', '1');
+          el.setAttribute('contenteditable', 'true');
+          el.setAttribute('spellcheck', 'false');
+
+          let initialText = el.textContent;
+
+          el.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.focus();
+          }, true);
+
+          el.addEventListener('input', function() {
+            window.parent.postMessage({
+              type: 'sc-edit',
+              nodeId: id,
+              content: el.textContent
+            }, '*');
+          });
+
+          el.addEventListener('blur', function() {
+            if (el.textContent !== initialText) {
+              initialText = el.textContent;
+              window.parent.postMessage({
+                type: 'sc-edit',
+                nodeId: id,
+                content: el.textContent
+              }, '*');
+            }
+          });
+
+          el.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+              el.blur();
+            }
+          });
+        }
+      }
+    });
+
+    if (count > 0) {
+      window.parent.postMessage({ type: 'sc-ready', nodeCount: count }, '*');
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindEditableNodes);
+  } else {
+    bindEditableNodes();
+  }
+
+  const observer = new MutationObserver(function() {
+    bindEditableNodes();
+  });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    window.addEventListener('DOMContentLoaded', function() {
+      if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  let checks = 0;
+  const interval = setInterval(function() {
+    bindEditableNodes();
+    checks++;
+    if (checks > 10) clearInterval(interval);
+  }, 300);
+})();
+</script>
+`;
+      htmlContent = htmlContent.includes('</body>')
+        ? htmlContent.replace('</body>', `${editorBridge}</body>`)
+        : `${htmlContent}${editorBridge}`;
+    }
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Access-Control-Allow-Origin', '*');

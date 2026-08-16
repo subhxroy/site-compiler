@@ -42,7 +42,27 @@ export default function EditExportPage() {
   const [previewVersion, setPreviewVersion] = useState(0);
   const [nodeCount, setNodeCount] = useState<number | null>(null);
 
-  // 1. Listen for edit events sent from iframe
+  // 1. Fetch site model on mount to get instant editable node count
+  useEffect(() => {
+    if (!jobId) return;
+    const fetchModel = async () => {
+      try {
+        const idToken = user ? await user.getIdToken() : '';
+        const res = await fetch(`/api/job/${jobId}/model`, {
+          headers: idToken ? { 'Authorization': `Bearer ${idToken}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.nodes) {
+            setNodeCount(Object.keys(data.nodes).length);
+          }
+        }
+      } catch {}
+    };
+    fetchModel();
+  }, [jobId, user]);
+
+  // 2. Listen for edit events sent from iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== 'object') return;
@@ -68,7 +88,9 @@ export default function EditExportPage() {
         });
         setImageInputSrc(event.data.src || '');
       } else if (event.data.type === 'sc-ready') {
-        setNodeCount(event.data.nodeCount || 0);
+        if (typeof event.data.nodeCount === 'number' && event.data.nodeCount > 0) {
+          setNodeCount(event.data.nodeCount);
+        }
       }
     };
 
@@ -76,79 +98,116 @@ export default function EditExportPage() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // 2. Inject contenteditable bridge into iframe when loaded
+  // 3. Inject contenteditable bridge into iframe when loaded
   const handleIframeLoad = () => {
     try {
       const iframeDoc = iframeRef.current?.contentDocument;
       if (!iframeDoc) return;
 
-      // Inject bridge script directly into iframe DOM
-      const bridgeScript = iframeDoc.createElement('script');
-      bridgeScript.textContent = `
-        (function() {
-          const editableNodes = document.querySelectorAll('[data-sc-id]');
-          let count = 0;
-
-          // Inject styling for editable highlights
-          const style = document.createElement('style');
-          style.textContent = \`
-            [data-sc-id] {
-              transition: outline 0.15s ease, background 0.15s ease;
-            }
-            [data-sc-id]:hover {
-              outline: 2px dashed rgba(255, 99, 99, 0.5) !important;
-              outline-offset: 2px !important;
-              cursor: text !important;
-            }
-            [data-sc-id]:focus {
-              outline: 2px solid #ff6363 !important;
-              outline-offset: 2px !important;
-              background-color: rgba(255, 99, 99, 0.08) !important;
-            }
-            img[data-sc-id]:hover {
-              outline: 2px solid #ff6363 !important;
-              cursor: pointer !important;
-              filter: brightness(1.08);
-            }
-          \`;
-          document.head.appendChild(style);
-
-          editableNodes.forEach(function(el) {
-            count++;
-            const id = el.getAttribute('data-sc-id');
-            const tag = el.tagName.toLowerCase();
-
-            if (tag === 'img') {
-              el.addEventListener('click', function(e) {
+      if (!iframeDoc.getElementById('sitecompiler-editor-bridge-js')) {
+        const bridgeScript = iframeDoc.createElement('script');
+        bridgeScript.id = 'sitecompiler-editor-bridge-js';
+        bridgeScript.textContent = `
+          (function() {
+            window.addEventListener('click', function(e) {
+              const anchor = e.target.closest('a');
+              if (anchor) {
                 e.preventDefault();
-                e.stopPropagation();
-                window.parent.postMessage({
-                  type: 'sc-select-image',
-                  nodeId: id,
-                  src: el.getAttribute('src') || ''
-                }, '*');
-              });
-            } else {
-              el.setAttribute('contenteditable', 'true');
-              let initialText = el.textContent;
+              }
+            }, true);
 
-              el.addEventListener('blur', function() {
-                if (el.textContent !== initialText) {
-                  initialText = el.textContent;
-                  window.parent.postMessage({
-                    type: 'sc-edit',
-                    nodeId: id,
-                    content: el.textContent
-                  }, '*');
+            function bindEditableNodes() {
+              const editableNodes = document.querySelectorAll('[data-sc-id]');
+              let count = 0;
+
+              editableNodes.forEach(function(el) {
+                count++;
+                const id = el.getAttribute('data-sc-id');
+                const tag = el.tagName.toLowerCase();
+
+                if (tag === 'img') {
+                  if (!el.getAttribute('data-sc-bound')) {
+                    el.setAttribute('data-sc-bound', '1');
+                    el.addEventListener('click', function(e) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.parent.postMessage({
+                        type: 'sc-select-image',
+                        nodeId: id,
+                        src: el.getAttribute('src') || ''
+                      }, '*');
+                    }, true);
+                  }
+                } else {
+                  if (!el.getAttribute('data-sc-bound')) {
+                    el.setAttribute('data-sc-bound', '1');
+                    el.setAttribute('contenteditable', 'true');
+                    el.setAttribute('spellcheck', 'false');
+
+                    let initialText = el.textContent;
+
+                    el.addEventListener('click', function(e) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      el.focus();
+                    }, true);
+
+                    el.addEventListener('input', function() {
+                      window.parent.postMessage({
+                        type: 'sc-edit',
+                        nodeId: id,
+                        content: el.textContent
+                      }, '*');
+                    });
+
+                    el.addEventListener('blur', function() {
+                      if (el.textContent !== initialText) {
+                        initialText = el.textContent;
+                        window.parent.postMessage({
+                          type: 'sc-edit',
+                          nodeId: id,
+                          content: el.textContent
+                        }, '*');
+                      }
+                    });
+
+                    el.addEventListener('keydown', function(e) {
+                      if (e.key === 'Escape') {
+                        el.blur();
+                      }
+                    });
+                  }
                 }
               });
-            }
-          });
 
-          window.parent.postMessage({ type: 'sc-ready', nodeCount: count }, '*');
-        })();
-      `;
-      iframeDoc.body.appendChild(bridgeScript);
+              if (count > 0) {
+                window.parent.postMessage({ type: 'sc-ready', nodeCount: count }, '*');
+              }
+            }
+
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', bindEditableNodes);
+            } else {
+              bindEditableNodes();
+            }
+
+            const observer = new MutationObserver(function() {
+              bindEditableNodes();
+            });
+            if (document.body) {
+              observer.observe(document.body, { childList: true, subtree: true });
+            }
+
+            let checks = 0;
+            const interval = setInterval(function() {
+              bindEditableNodes();
+              checks++;
+              if (checks > 10) clearInterval(interval);
+            }, 300);
+          })();
+        `;
+        iframeDoc.body.appendChild(bridgeScript);
+      }
     } catch {}
   };
 
