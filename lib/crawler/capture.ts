@@ -70,6 +70,7 @@ export function createMinimalPngBuffer(width = 1200, height = 800): Buffer {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// normalizeUrl: for PAGE URLs only — strips both query string and hash for dedup
 function normalizeUrl(urlStr: string): string {
   try {
     const u = new URL(urlStr);
@@ -78,6 +79,20 @@ function normalizeUrl(urlStr: string): string {
     let p = u.pathname;
     if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
     return `${u.protocol}//${u.host}${p}`;
+  } catch {
+    return urlStr;
+  }
+}
+
+// normalizeAssetUrl: for ASSET URLs — strips only the hash fragment.
+// Query strings MUST be preserved because CDN transformations (Cloudinary w=800&q=80,
+// Imgix fit=crop&w=600) are encoded in the query string. Stripping them fetches
+// the wrong resource (wrong size/crop/format).
+function normalizeAssetUrl(urlStr: string): string {
+  try {
+    const u = new URL(urlStr);
+    u.hash = '';
+    return u.href;
   } catch {
     return urlStr;
   }
@@ -490,7 +505,19 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }, isEntry);
         } catch {}
 
-        await new Promise((r) => setTimeout(r, 600));
+        // RC5 fix: Wait for JS hydration using network-idle + image-resolved polling
+        // instead of a fixed 600ms delay which is too short on slow networks.
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 4000 });
+        } catch {}
+        try {
+          await page.waitForFunction(() => {
+            // Wait until at least some images have resolved src and document is complete
+            const imgs = Array.from(document.querySelectorAll('img'));
+            const resolvedCount = imgs.filter(i => i.src && !i.src.startsWith('data:') && i.complete).length;
+            return document.readyState === 'complete' && (imgs.length === 0 || resolvedCount > 0);
+          }, { timeout: 4000 });
+        } catch {}
 
         // Dismiss cookie/GDPR banners
         const cookieDismissSelectors = [
@@ -513,21 +540,30 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           } catch {}
         }
 
-        // Capped Fast Scroll to trigger lazy loading & React hydration
+        // RC6 fix: Fast-scroll BEFORE page.content() so IntersectionObserver-triggered
+        // lazy images and data-src swaps are resolved BEFORE we snapshot the DOM.
+        // Previously the scroll ran AFTER page.content(), so lazy images were captured
+        // with src="" or data-src="..." instead of their real URLs.
         try {
           await page.evaluate(async () => {
             const maxScroll = Math.min(
               Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-              5000
+              8000
             );
-            for (let y = 0; y < maxScroll; y += 400) {
+            // Scroll down in steps to trigger IntersectionObserver on every lazy image
+            for (let y = 0; y < maxScroll; y += 300) {
               window.scrollTo({ top: y, behavior: 'instant' });
-              await new Promise((r) => setTimeout(r, 50));
+              await new Promise((r) => setTimeout(r, 60));
+            }
+            // Second pass: scroll back up slowly to catch above-fold lazy loads
+            for (let y = maxScroll; y >= 0; y -= 600) {
+              window.scrollTo({ top: y, behavior: 'instant' });
+              await new Promise((r) => setTimeout(r, 40));
             }
             window.scrollTo(0, 0);
-            await new Promise((r) => setTimeout(r, 200));
+            await new Promise((r) => setTimeout(r, 300));
 
-            // Reset smooth scroll wrapper inline transformations
+            // Reset smooth scroll wrapper inline transformations so snapshot is clean
             const smoothWrapper = document.getElementById('smooth-wrapper');
             if (smoothWrapper) {
               smoothWrapper.style.position = 'static';
@@ -549,7 +585,10 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        await page.waitForTimeout(500);
+        // Wait for any lazy-triggered network requests to settle after scroll
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 2500 });
+        } catch {}
 
         // Clean up blocking preloader elements before DOM HTML snapshot
         try {
@@ -567,8 +606,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        // Capture page DOM HTML (strip source-platform watermarks so all export
-        // formats — HTML, React, Next.js — ship clean output)
+        // NOW snapshot the DOM — lazy images are resolved, preloaders removed,
+        // scroll position is back at top, smooth-scroll wrappers are neutralised.
         const pageHtml = await page.content();
         const cleanPageHtml = stripPlatformWatermarks(pageHtml);
         const htmlFilename = urlToHtmlFilename(currentUrl, isEntry);
@@ -959,26 +998,52 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     }
 
     // ── Download all assets (Concurrent pool) ─────────────────────────────
-    const mergedAssetUrls = [
-      ...new Set([
-        ...allDiscoveredAssetUrls,
-        ...cssAssetUrls,
-        ...networkAssetUrls,
-      ]),
-    ]
-      .filter((u) => u.startsWith('http://') || u.startsWith('https://'))
-      .slice(0, 300); // Resource limit: cap at 300 assets
+    // RC9 fix: Use normalizeAssetUrl (keeps CDN query strings) for dedup —
+    // normalizeUrl would strip ?w=800&q=80 from Cloudinary/Imgix URLs and fetch
+    // the wrong resource (wrong size / crop / format).
+    // RC4 fix: Raised cap to 600. Assets are sorted by visual priority so images
+    // and fonts always download first and scripts/videos only if cap permits.
+    const rawMergedUrls = [
+      ...allDiscoveredAssetUrls,
+      ...cssAssetUrls,
+      ...networkAssetUrls,
+    ];
 
-    log(`Downloading ${mergedAssetUrls.length} total assets in parallel...`);
+    // Deduplicate using normalizeAssetUrl (hash-only strip, preserves query string)
+    const seenAssetUrls = new Set<string>();
+    const mergedAssetUrls: string[] = [];
+    for (const u of rawMergedUrls) {
+      if (!u.startsWith('http://') && !u.startsWith('https://')) continue;
+      const normed = normalizeAssetUrl(u);
+      if (!seenAssetUrls.has(normed)) {
+        seenAssetUrls.add(normed);
+        mergedAssetUrls.push(u);
+      }
+    }
+
+    // Sort by visual priority: images & fonts first (most visible), scripts last
+    const priorityOrder = (u: string): number => {
+      const lower = u.toLowerCase().split('?')[0];
+      if (lower.match(/\.(woff2?|ttf|otf|eot)/)) return 0;    // fonts — highest
+      if (lower.match(/\.(png|jpe?g|gif|webp|avif|svg|ico)/)) return 1; // images
+      if (lower.match(/\.(mp4|webm|ogg|mov)/)) return 2;       // video
+      if (lower.match(/\.(m?js|wasm)/)) return 3;              // scripts — lowest
+      return 1;
+    };
+    mergedAssetUrls.sort((a, b) => priorityOrder(a) - priorityOrder(b));
+
+    const cappedAssetUrls = mergedAssetUrls.slice(0, 600); // RC4: raised from 300 → 600
+
+    log(`Downloading ${cappedAssetUrls.length} total assets in parallel (${mergedAssetUrls.length} discovered)...`);
 
     const ASSET_CONCURRENCY = 12;
-    const downloadedManifestItems: Array<ExtractedAsset | null> = new Array(mergedAssetUrls.length).fill(null);
+    const downloadedManifestItems: Array<ExtractedAsset | null> = new Array(cappedAssetUrls.length).fill(null);
 
     let nextAssetIndex = 0;
-    const assetWorkers = Array.from({ length: Math.min(ASSET_CONCURRENCY, mergedAssetUrls.length) }, async () => {
-      while (nextAssetIndex < mergedAssetUrls.length) {
+    const assetWorkers = Array.from({ length: Math.min(ASSET_CONCURRENCY, cappedAssetUrls.length) }, async () => {
+      while (nextAssetIndex < cappedAssetUrls.length) {
         const itemIdx = nextAssetIndex++;
-        const assetUrl = mergedAssetUrls[itemIdx];
+        const assetUrl = cappedAssetUrls[itemIdx];
         const assetNumber = itemIdx + 1;
 
         try {

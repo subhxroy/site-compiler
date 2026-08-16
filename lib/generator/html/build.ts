@@ -80,7 +80,10 @@ const CRITICAL_OVERRIDE_CSS = `
     opacity: 1 !important;
   }
 
-  /* ── Universal site headers — WordPress / Webflow / Wix / Squarespace ── */
+  /* ── Universal site headers — only ensure they layer above content ──
+     We deliberately do NOT force position: sticky here — sites that use
+     position: fixed would break (nav disappears on scroll past header).
+     Respect the original positioning; just ensure correct z-index. ── */
   header.site-header,
   header.header,
   .site-header,
@@ -95,16 +98,6 @@ const CRITICAL_OVERRIDE_CSS = `
   .sticky-nav,
   .navbar-fixed-top,
   .nav-fixed {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 9999 !important;
-  }
-
-  /* ── Webflow navbar ── */
-  [data-wf-page] nav,
-  [data-w-id] nav {
-    position: sticky !important;
-    top: 0 !important;
     z-index: 9999 !important;
   }
 
@@ -922,9 +915,35 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     fs.writeFileSync(path.join(scTaggedDir, pageItem.htmlFilename), $.html(), 'utf-8');
 
     // ── Head cleanup ──
-    // Remove only external stylesheets (we bundle them into styles.css)
-    // Keep inline <style> tags — they contain CSS custom properties and critical site tokens
+    // Remove external stylesheets (bundled into styles.css)
     $('link[rel="stylesheet"]').remove();
+
+    // RC3 fix: Remove inline <style> tags that were captured into styles.css and bundled.
+    // These cause double-definition conflicts where styles.css can override inline values.
+    // PRESERVE:
+    //   - <style data-framer-font-css>    — font-face declarations needed for immediate paint
+    //   - <style data-framer-breakpoint-css> — Framer responsive breakpoint hashes
+    //   - <style> tags whose ONLY content is @font-face or :root CSS custom properties
+    //     (design tokens; removing them would break the entire color/spacing system)
+    $('style').each((_, el) => {
+      const $el = $(el);
+      // Always keep specially-attributed Framer style blocks
+      if ($el.attr('data-framer-font-css') !== undefined ||
+          $el.attr('data-framer-breakpoint-css') !== undefined ||
+          $el.attr('data-framer-hydrate-v2') !== undefined) {
+        return;
+      }
+      const content = ($el.html() || '').trim();
+      // Keep blocks that are primarily @font-face or :root token definitions
+      const isFontOrTokenBlock = (
+        (content.match(/@font-face/gi) || []).length > 0 ||
+        // :root-only block — compatible multiline check (no /s flag needed)
+        (/^\s*:root\s*\{/.test(content) && content.indexOf('{') === content.lastIndexOf('{'))
+      );
+      if (isFontOrTokenBlock) return;
+      // Remove everything else — these were captured into styles.css already
+      $el.remove();
+    });
 
     // Remove editor overlays
     $('#__framer-editorbar').remove();

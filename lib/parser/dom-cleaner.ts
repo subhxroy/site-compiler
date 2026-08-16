@@ -411,14 +411,32 @@ export function cleanDom(
 
   $('html, body').each((_, el) => {
     const $el = $(el);
+    const tag = el.tagName?.toLowerCase() || '';
     const style = $el.attr('style') || '';
-    const cleaned = style
-      .replace(/height:\s*[^;]+;?/gi, '')
-      .replace(/overflow[^:]*:\s*[^;]+;?/gi, '')
-      .replace(/overscroll-behavior[^:]*:\s*[^;]+;?/gi, '')
-      .replace(/touch-action:\s*[^;]+;?/gi, '');
+    if (!style) return;
+
+    // RC7 fix: Only strip properties that are scroll-hijacking artefacts.
+    // DO NOT strip all overflow — only strip overflow:hidden and overflow:clip
+    // (the values that create scroll containers / lock scrolling).
+    // DO NOT strip all height — only strip height:100% and height:100vh from <body>
+    // (<html> may legitimately use height:100vh for full-screen hero layouts).
+    let cleaned = style
+      // Strip overflow:hidden and overflow:clip (scroll-hijackers) — both axis-specific and shorthand
+      .replace(/overflow(?:-x|-y)?:\s*(?:hidden|clip)\s*!?important?\s*;?/gi, '')
+      // Strip overscroll-behavior locking (always a scroll-hijack artefact)
+      .replace(/overscroll-behavior(?:-x|-y)?:\s*[^;]+;?/gi, '')
+      // Strip touch-action:none (always a scroll-hijack artefact)
+      .replace(/touch-action:\s*none[^;]*;?/gi, '');
+
+    // Only strip height from <body> — <html> may need height:100vh for hero sections
+    if (tag === 'body') {
+      cleaned = cleaned
+        .replace(/height:\s*100(?:vh|%)\s*!?important?\s*;?/gi, '')
+        .replace(/min-height:\s*100(?:vh|%)\s*!?important?\s*;?/gi, '');
+    }
+
     if (cleaned.trim()) {
-      $el.attr('style', cleaned);
+      $el.attr('style', cleaned.trim());
     } else {
       $el.removeAttr('style');
     }

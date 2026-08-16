@@ -58,7 +58,6 @@ export function parseAndConsolidateCss(
   }
 
   const classMap = new Map<string, string>();
-  const rulesMap = new Map<string, string[]>(); // declarationString -> list of selectors sharing exact same CSS
 
   let root: postcss.Root;
   const sanitizedCombined = sanitizeCssText(combinedCss);
@@ -96,6 +95,10 @@ export function parseAndConsolidateCss(
     }
   }
 
+  // ── Pass 1: Rewrite url() references and strip watermark rules ──
+  // IMPORTANT: We do NOT sort declarations. CSS declaration order is
+  // semantically significant — sorting alphabetically corrupts cascade
+  // overrides, CSS custom-property definitions, and @keyframes steps.
   root.walkRules((rule) => {
     // Strip platform watermark/badge CSS rules
     if (/framer-badge|webflow-badge|wix-badge|wixAdWrapper|wpadminbar/i.test(rule.selector)) {
@@ -103,63 +106,28 @@ export function parseAndConsolidateCss(
       return;
     }
 
-    // Collect declarations
-    const decls: string[] = [];
-    rule.walkDecls((decl) => {
-      let value = decl.value;
-      // Rewrite url(...) references in CSS values
-      value = value.replace(/url\(['"]?(.*?)['"]?\)/g, (match, p1) => {
-        if (!p1 || p1.startsWith('data:')) return match;
-        let absUrl = p1;
-        try {
-          absUrl = new URL(p1, baseUrl).href;
-        } catch {}
-
-        if (assetMap[absUrl]) {
-          return `url("${assetMap[absUrl]}")`;
-        }
-        if (assetMap[p1]) {
-          return `url("${assetMap[p1]}")`;
-        }
-        // Match by filename
-        for (const [orig, local] of Object.entries(assetMap)) {
-          const base = orig.split('?')[0].split('/').pop();
-          if (base && (p1.endsWith(base) || orig.endsWith(p1))) {
-            return `url("${local}")`;
-          }
-        }
-        if (!p1.startsWith('http://') && !p1.startsWith('https://') && !p1.startsWith('//')) {
-          try {
-            return `url("${new URL(p1, baseUrl).href}")`;
-          } catch {}
-        }
-        return match;
-      });
-
-      decls.push(`${decl.prop}: ${value}${decl.important ? ' !important' : ''};`);
-    });
-
-    const declString = decls.sort().join(' ');
-    if (declString) {
-      if (!rulesMap.has(declString)) {
-        rulesMap.set(declString, []);
-      }
-      rulesMap.get(declString)!.push(rule.selector);
+    // Skip @keyframes child rules — their order is semantically critical
+    // (from/to/0%/100%) and must never be deduped or reordered.
+    const parent = rule.parent as postcss.AtRule | undefined;
+    if (parent?.type === 'atrule' && /keyframes/i.test(parent.name)) {
+      return;
     }
 
-    // Extract class names from selector
+    // Extract class names from selector for classMap (used by React/Next.js generator)
     const classMatches = rule.selector.match(/\.([a-zA-Z0-9_-]+)/g);
     if (classMatches) {
       classMatches.forEach((cls) => {
         const className = cls.substring(1);
-        classMap.set(className, declString);
+        // Use the raw selector as the map value — callers only check presence
+        classMap.set(className, rule.selector);
       });
     }
   });
 
-  // Re-serialize clean PostCSS tree
+  // ── Pass 2: Rewrite all url() values in the tree (single walk, no mutation of order) ──
   root.walkDecls((decl) => {
-    decl.value = decl.value.replace(/url\(['"]?(.*?)['"]?\)/g, (match, p1) => {
+    if (!decl.value.includes('url(')) return;
+    decl.value = decl.value.replace(/url\(['\"]?(.*?)['\"]?\)/g, (match, p1) => {
       if (!p1 || p1.startsWith('data:')) return match;
       let absUrl = p1;
       try {
@@ -168,12 +136,14 @@ export function parseAndConsolidateCss(
 
       if (assetMap[absUrl]) return `url("${assetMap[absUrl]}")`;
       if (assetMap[p1]) return `url("${assetMap[p1]}")`;
+      // Match by filename basename
       for (const [orig, local] of Object.entries(assetMap)) {
         const base = orig.split('?')[0].split('/').pop();
         if (base && (p1.endsWith(base) || orig.endsWith(p1))) {
           return `url("${local}")`;
         }
       }
+      // Fallback: relative paths → absolute remote URL (loads from origin)
       if (!p1.startsWith('http://') && !p1.startsWith('https://') && !p1.startsWith('//')) {
         try {
           return `url("${new URL(p1, baseUrl).href}")`;
