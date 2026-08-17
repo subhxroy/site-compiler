@@ -678,32 +678,23 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           }, targetHost);
         } catch {}
 
-        // Fallback: Regex scan captured HTML source for path-like relative links.
-        const linkRegex = /(?:href|src|data-href|data-url|data-path)=["']([^"']+)["']/gi;
+        // Fallback: Regex scan captured HTML source for exact href links (handles static and SSR anchors)
+        const linkRegex = /(?:href|data-href|data-url)=["']([^"']+)["']/gi;
         let match;
         while ((match = linkRegex.exec(cleanPageHtml)) !== null) {
           const hrefVal = (match[1] || '').trim();
           if (!hrefVal || hrefVal === './' || hrefVal.startsWith('#') || hrefVal.startsWith('javascript:') || hrefVal.startsWith('mailto:') || hrefVal.startsWith('tel:') || hrefVal.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(hrefVal)) continue;
           try {
-            const fullUrl = normalizeUrl(new URL(hrefVal, currentUrl).href);
-            const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
-            const tHost = targetHost.toLowerCase().replace(/^www\./, '');
-            if (uHost === tHost && !internalLinks.includes(fullUrl)) {
-              internalLinks.push(fullUrl);
-            }
-          } catch {}
-        }
+            const u = new URL(hrefVal, currentUrl);
+            u.hash = '';
+            u.search = '';
+            let p = u.pathname;
+            if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+            const fullUrl = `${u.protocol}//${u.host}${p}`;
 
-        // Additional Regex scan for quoted URL paths like "/work/bellagio" or "/about"
-        const pathRegex = /"(?:\/)([a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)"/g;
-        let pathMatch;
-        while ((pathMatch = pathRegex.exec(cleanPageHtml)) !== null) {
-          const matchedPath = pathMatch[1];
-          if (!matchedPath || matchedPath.startsWith('api') || matchedPath.startsWith('_') || matchedPath.includes('.')) continue;
-          try {
-            const fullUrl = normalizeUrl(new URL(`/${matchedPath}`, currentUrl).href);
-            const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
-            const tHost = targetHost.toLowerCase().replace(/^www\./, '');
+            const cleanHost = (h: string) => h.toLowerCase().replace(/^www\./, '');
+            const uHost = cleanHost(u.hostname);
+            const tHost = cleanHost(targetHost);
             if (uHost === tHost && !internalLinks.includes(fullUrl)) {
               internalLinks.push(fullUrl);
             }

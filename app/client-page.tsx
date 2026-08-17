@@ -334,24 +334,28 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             }
           }
         } else if (res.status === 404) {
-          console.error(`[POLL DEBUG] Job ${jobId} returned 404 (job missing on backend)`);
-          setJob((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: 'failed',
-                  error: 'Export job not found or backend was restarted.',
-                  progressMessage: 'Export job expired.',
-                }
-              : null
-          );
-          setLoading(false);
-          localStorage.removeItem('sitecompiler_active_job_id');
-          clearInterval(iv);
+          consecutiveErrors++;
+          console.warn(`[POLL DEBUG] Job ${jobId} returned 404 (attempt ${consecutiveErrors}/60)`);
+          // Only fail after 15 consecutive 404s (gives backend 22s buffer for job registration/sync)
+          if (consecutiveErrors >= 15) {
+            setJob((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: 'failed',
+                    error: 'Export job not found or backend was restarted.',
+                    progressMessage: 'Export job expired.',
+                  }
+                : null
+            );
+            setLoading(false);
+            localStorage.removeItem('sitecompiler_active_job_id');
+            clearInterval(iv);
+          }
         } else {
           consecutiveErrors++;
-          console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors})`);
-          if (consecutiveErrors >= 30) {
+          console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors}/60)`);
+          if (consecutiveErrors >= 60) {
             setJob((prev) =>
               prev
                 ? {
@@ -368,8 +372,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
         }
       } catch (pollErr) {
         consecutiveErrors++;
-        console.error(`[POLL DEBUG] Network error polling status (attempt ${consecutiveErrors}/30):`, pollErr);
-        if (consecutiveErrors >= 30) {
+        console.error(`[POLL DEBUG] Network error polling status (attempt ${consecutiveErrors}/60):`, pollErr);
+        if (consecutiveErrors >= 60) {
           setJob((prev) =>
             prev
               ? {
