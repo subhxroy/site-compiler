@@ -389,7 +389,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
 
   const crawlStartTime = Date.now();
-  const MAX_CRAWL_DURATION_MS = 2.5 * 60 * 1000; // 2.5 min max budget for Phase 1 crawl
+  const MAX_CRAWL_DURATION_MS = 4.5 * 60 * 1000; // 4.5 min budget for multi-page crawl
 
   try {
     let pageCount = 0;
@@ -627,7 +627,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
           });
         } catch {}
 
-        // Extract internal links for subpage crawling
+        // Extract internal links for subpage crawling (checks standard anchors, data-href, and client router references)
         let internalLinks: string[] = [];
         try {
           internalLinks = await page.evaluate((targetHost: string) => {
@@ -635,13 +635,12 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
             const cleanHost = (h: string) => h.toLowerCase().replace(/^www\./, '');
             const normalizedTarget = cleanHost(targetHost);
 
-            document.querySelectorAll('a[href]').forEach((el) => {
+            const checkAndAdd = (hrefProp: string | null | undefined) => {
+              if (!hrefProp || typeof hrefProp !== 'string') return;
+              const h = hrefProp.trim();
+              if (!h || h === './' || h.startsWith('#') || h.startsWith('javascript:') || h.startsWith('mailto:') || h.startsWith('tel:') || h.startsWith('data:')) return;
               try {
-                const a = el as HTMLAnchorElement;
-                const hrefProp = a.getAttribute('href') || a.href;
-                if (!hrefProp || hrefProp.startsWith('#') || hrefProp.startsWith('javascript:') || hrefProp.startsWith('mailto:') || hrefProp.startsWith('tel:')) return;
-                
-                const absUrl = new URL(hrefProp, window.location.href);
+                const absUrl = new URL(h, window.location.href);
                 if (cleanHost(absUrl.hostname) === normalizedTarget && (absUrl.protocol === 'http:' || absUrl.protocol === 'https:')) {
                   let p = absUrl.pathname || '/';
                   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
@@ -649,21 +648,60 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
                   links.add(norm);
                 }
               } catch {}
+            };
+
+            // 1. Standard HTML Anchors
+            document.querySelectorAll('a[href]').forEach((el) => {
+              const a = el as HTMLAnchorElement;
+              checkAndAdd(a.getAttribute('href') || a.href);
             });
+
+            // 2. Custom button / card data-href or data-url attributes
+            document.querySelectorAll('[data-href], [data-url], [data-path], [data-route]').forEach((el) => {
+              checkAndAdd(el.getAttribute('data-href') || el.getAttribute('data-url') || el.getAttribute('data-path') || el.getAttribute('data-route'));
+            });
+
+            // 3. Framer __framer__ / routes in window or hydration scripts
+            try {
+              document.querySelectorAll('script').forEach((s) => {
+                const txt = s.textContent || '';
+                if (txt.includes('routes') || txt.includes('path') || txt.includes('/work/') || txt.includes('/project/')) {
+                  const m = txt.matchAll(/"(path|route|href|url)":\s*"(\/[a-zA-Z0-9_\-\/]+)"/gi);
+                  for (const match of m) {
+                    if (match && match[2]) checkAndAdd(match[2]);
+                  }
+                }
+              });
+            } catch {}
+
             return [...links];
           }, targetHost);
         } catch {}
 
         // Fallback: Regex scan captured HTML source for path-like relative links.
-        // Matches both `/about` and Framer-style `./about` (leading dot-slash),
-        // which the original `/`-anchored regex silently missed.
-        const linkRegex = /href=["']([^"']+)["']/gi;
+        const linkRegex = /(?:href|src|data-href|data-url|data-path)=["']([^"']+)["']/gi;
         let match;
         while ((match = linkRegex.exec(cleanPageHtml)) !== null) {
           const hrefVal = (match[1] || '').trim();
           if (!hrefVal || hrefVal === './' || hrefVal.startsWith('#') || hrefVal.startsWith('javascript:') || hrefVal.startsWith('mailto:') || hrefVal.startsWith('tel:') || hrefVal.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(hrefVal)) continue;
           try {
             const fullUrl = normalizeUrl(new URL(hrefVal, currentUrl).href);
+            const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
+            const tHost = targetHost.toLowerCase().replace(/^www\./, '');
+            if (uHost === tHost && !internalLinks.includes(fullUrl)) {
+              internalLinks.push(fullUrl);
+            }
+          } catch {}
+        }
+
+        // Additional Regex scan for quoted URL paths like "/work/bellagio" or "/about"
+        const pathRegex = /"(?:\/)([a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)"/g;
+        let pathMatch;
+        while ((pathMatch = pathRegex.exec(cleanPageHtml)) !== null) {
+          const matchedPath = pathMatch[1];
+          if (!matchedPath || matchedPath.startsWith('api') || matchedPath.startsWith('_') || matchedPath.includes('.')) continue;
+          try {
+            const fullUrl = normalizeUrl(new URL(`/${matchedPath}`, currentUrl).href);
             const uHost = new URL(fullUrl).hostname.toLowerCase().replace(/^www\./, '');
             const tHost = targetHost.toLowerCase().replace(/^www\./, '');
             if (uHost === tHost && !internalLinks.includes(fullUrl)) {

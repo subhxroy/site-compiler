@@ -952,6 +952,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-[#59d499]" />
                       <span className="font-mono">Live Interactive Preview</span>
+                      <span className="text-[10px] text-[#6a6b6c] hidden sm:inline">(rendered live from backend server)</span>
                     </div>
                     <div className="flex items-center gap-3">
                       {job.format === 'html' && (
@@ -978,6 +979,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     src={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
                     title="Live Interactive Site Preview"
                     className="w-full flex-1 border-0 bg-[#07080a]"
+                    loading="lazy"
                     sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                   />
                 </div>
