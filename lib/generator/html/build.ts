@@ -74,9 +74,11 @@ const CRITICAL_OVERRIDE_CSS = `
     visibility: visible !important;
   }
 
-  /* ── Framer word-by-word text reveal (opacity: 0.001 start state) ── */
-  span[style*="opacity: 0.001"],
-  span[style*="opacity:0.001"] {
+  /* ── Framer word-by-word text reveal: only reveal spans NOT inside scroll-colour containers ──
+     Spans inside a scroll-linked reveal section must stay at their dynamic opacity;
+     only standalone hidden spans (outside reveal containers) get forced visible. */
+  span[style*="opacity: 0.001"]:not([data-sc-scroll-word]),
+  span[style*="opacity:0.001"]:not([data-sc-scroll-word]) {
     opacity: 1 !important;
   }
 
@@ -367,6 +369,8 @@ const ANIMATION_SHIM_JS = `
     );
 
     candidates.forEach(function (el) {
+      // Skip word-reveal spans — managed exclusively by initScrollColourText
+      if (el.tagName === 'SPAN' && el.getAttribute('data-sc-scroll-word')) return;
       if (!seen.has(el)) {
         seen.add(el);
         elements.push(el);
@@ -374,9 +378,11 @@ const ANIMATION_SHIM_JS = `
     });
 
     // Also include inline-style animation initial states (translateY + opacity:0 pattern)
-    // But skip center-hinted elements (navbars) and layout-positioned elements
+    // But skip center-hinted elements (navbars) and word-reveal spans
     document.querySelectorAll('[style]').forEach(function (el) {
       if (el.getAttribute('data-framer-layout-hint-center-x')) return;
+      // Skip word-reveal spans — managed exclusively by initScrollColourText
+      if (el.tagName === 'SPAN' && el.getAttribute('data-sc-scroll-word')) return;
       var s = el.getAttribute('style') || '';
       if (isAnimationTransform(s) && !seen.has(el)) {
         seen.add(el);
@@ -430,26 +436,92 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
-  /* ── 3. Scroll-colour text animation (Framer quote / reveal sections) ── */
+  /* ── 3. Scroll-linked word reveal (Framer quote / hero paragraph sections) ──
+     Handles two Framer reveal patterns:
+       A) colour  — span has will-change:color + dim rgba colour (e.g. rgba(0,0,0,0.1))
+       B) opacity — span has opacity near 0 (0.001 – 0.15) inside a paragraph / quote block
+     Both patterns animate word-by-word as the section scrolls past the 70% viewport threshold.
+     Uses a single rAF loop for 60fps (no scroll-listener jank). */
   function initScrollColourText() {
-    var words = document.querySelectorAll(
-      '[style*="will-change:color"][style*="rgba(0, 0, 0, 0.1)"],' +
-      '[style*="will-change: color"][style*="rgba(0, 0, 0, 0.1)"],' +
-      '[style*="will-change:color"][style*="rgba(255,255,255,0.1)"]'
+    /* ── Pattern A: colour-shift words ── */
+    var colourWords = Array.from(document.querySelectorAll(
+      '[style*="will-change:color"],[style*="will-change: color"]'
+    )).filter(function (el) {
+      var s = el.getAttribute('style') || '';
+      return /rgba?\(/.test(s);
+    });
+
+    /* ── Pattern B: opacity word-reveal spans inside text containers ── */
+    var opacityWords = [];
+    // Find containers that Framer uses for paragraph text reveals
+    var textContainers = document.querySelectorAll(
+      '[data-framer-name*="Text"],[data-framer-name*="Quote"],[data-framer-name*="Hero"],' +
+      '[data-framer-name*="Paragraph"],[data-framer-name*="Body"],[data-framer-name*="Tagline"],' +
+      '.framer-text'
     );
-    if (!words.length) return;
-    var wordArray = Array.from(words);
-    function onScroll() {
-      var viewH = window.innerHeight;
-      wordArray.forEach(function (span) {
-        var rect = span.getBoundingClientRect();
-        var progress = 1 - Math.max(0, rect.top / (viewH * 0.75));
-        var color = progress >= 1 ? span.getAttribute('data-reveal-color') || 'rgb(17,17,17)' : 'rgba(0,0,0,0.08)';
-        span.style.color = color;
+    textContainers.forEach(function (container) {
+      container.querySelectorAll('span[style]').forEach(function (span) {
+        var s = span.getAttribute('style') || '';
+        var opM = s.match(/opacity:\s*([0-9.]+)/);
+        if (opM && parseFloat(opM[1]) < 0.16) {
+          span.setAttribute('data-sc-scroll-word', '1');
+          opacityWords.push(span);
+        }
       });
+    });
+    // Also scan any span[style*="opacity: 0.001"] that were not already in a container
+    document.querySelectorAll('span[style*="opacity: 0.001"],span[style*="opacity:0.001"]').forEach(function (span) {
+      if (!span.getAttribute('data-sc-scroll-word')) {
+        span.setAttribute('data-sc-scroll-word', '1');
+        opacityWords.push(span);
+      }
+    });
+
+    var allWords = colourWords.concat(opacityWords);
+    if (!allWords.length) return;
+
+    // Pre-compute the reveal colour for each span (bright target)
+    allWords.forEach(function (span) {
+      if (!span.getAttribute('data-sc-reveal-target')) {
+        var s = span.getAttribute('style') || '';
+        var existingColor = span.getAttribute('data-reveal-color');
+        if (!existingColor) {
+          // Infer from background — dark bg => white, light bg => near-black
+          var bg = window.getComputedStyle(document.body).backgroundColor;
+          var isDark = /rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.test(bg) &&
+            parseInt(RegExp.$1) + parseInt(RegExp.$2) + parseInt(RegExp.$3) < 200;
+          existingColor = isDark ? 'rgb(240,240,240)' : 'rgb(17,17,17)';
+        }
+        span.setAttribute('data-sc-reveal-target', existingColor);
+      }
+    });
+
+    var ticking = false;
+    function update() {
+      var viewH = window.innerHeight;
+      var revealZone = viewH * 0.72; // words reveal when top < 72% vh
+      allWords.forEach(function (span) {
+        var rect = span.getBoundingClientRect();
+        // progress: 0 (element top at revealZone) → 1 (element top at 30% vh)
+        var raw = (revealZone - rect.top) / (revealZone - viewH * 0.30);
+        var progress = Math.max(0, Math.min(1, raw));
+        var target = span.getAttribute('data-sc-reveal-target') || 'rgb(17,17,17)';
+        if (span.getAttribute('data-sc-scroll-word')) {
+          // opacity pattern: lerp from ~0.05 to 1
+          span.style.opacity = (0.05 + progress * 0.95).toFixed(3);
+        } else {
+          // colour pattern: snap between dim and target
+          span.style.color = progress >= 1 ? target : 'rgba(0,0,0,0.08)';
+        }
+      });
+      ticking = false;
     }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
+
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    // Run once on init to set correct initial state
+    requestAnimationFrame(update);
   }
 
   /* ── 4. Smooth anchor scroll ── */
@@ -547,7 +619,6 @@ const ANIMATION_SHIM_JS = `
       'nav.main-navigation, nav.navbar, .w-nav, header[id*="header"]'
     );
     if (!header) return;
-    var orig = header.style.cssText;
     window.addEventListener('scroll', function () {
       if (window.scrollY > 50) {
         header.classList.add('is-scrolled');
