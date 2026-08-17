@@ -389,14 +389,14 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
 
   const crawlStartTime = Date.now();
-  const MAX_CRAWL_DURATION_MS = 4.5 * 60 * 1000; // 4.5 min budget for multi-page crawl
+  const MAX_CRAWL_DURATION_MS = 2.5 * 60 * 1000; // 2.5 min max crawl budget to guarantee total pipeline finishes well under 5 min
 
   try {
     let pageCount = 0;
 
     while (pagesToCrawl.length > 0 && pageCount < maxPages) {
       if (Date.now() - crawlStartTime > MAX_CRAWL_DURATION_MS && capturedPages.length > 0) {
-        log(`[Crawl Watchdog] Crawl duration limit (2.5 min) reached. Finalizing capture with ${capturedPages.length} page(s)...`);
+        log(`[Crawl Watchdog] Crawl duration limit reached. Finalizing capture with ${capturedPages.length} page(s)...`);
         break;
       }
 

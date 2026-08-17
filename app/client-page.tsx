@@ -275,7 +275,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     let consecutiveErrors = 0;
     let pollAttempt = 0;
     const startTime = Date.now();
-    const MAX_JOB_DURATION_MS = 5 * 60 * 1000; // 5 minute max client-side timeout
+    const MAX_JOB_DURATION_MS = 8 * 60 * 1000; // 8 minute max client-side timeout
 
     console.log(`[POLL DEBUG] Starting status polling for jobId: ${jobId}`);
 
@@ -288,13 +288,13 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           if (prev && (prev.status === 'completed' || TERMINAL_STATUSES.includes(prev.status))) {
             return prev;
           }
-          console.warn(`[POLL DEBUG] Unfinished job ${jobId} hit 5-minute client watchdog timeout`);
+          console.warn(`[POLL DEBUG] Unfinished job ${jobId} hit 8-minute client watchdog timeout`);
           return prev
             ? {
                 ...prev,
                 status: 'failed',
                 error: 'Export process timed out. The backend engine or target site took too long to respond.',
-                progressMessage: 'Export process timed out after 5 minutes.',
+                progressMessage: 'Export process timed out after 8 minutes.',
               }
             : null;
         });
