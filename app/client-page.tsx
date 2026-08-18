@@ -257,11 +257,25 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               return;
             }
           }
+          // Job not found (404) or invalid response — stale job ID, clear everything
           setLoading(false);
+          setJobId(null);
           localStorage.removeItem('sitecompiler_active_job_id');
+          // Also clear the ?jobId= URL param so it doesn't persist across reloads
+          if (typeof window !== 'undefined') {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('jobId');
+            window.history.replaceState({}, '', cleanUrl.toString());
+          }
         } catch {
           setLoading(false);
+          setJobId(null);
           localStorage.removeItem('sitecompiler_active_job_id');
+          if (typeof window !== 'undefined') {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('jobId');
+            window.history.replaceState({}, '', cleanUrl.toString());
+          }
         }
       };
       fetchStatus();
@@ -683,19 +697,21 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
       {/* ── Raycast Job Result Panel ───────────────────────────────────────── */}
       {job && (
-        <section className="max-w-[960px] mx-auto px-4 sm:px-6 pb-20 space-y-4">
+        <section className="max-w-[960px] mx-auto px-3 sm:px-6 pb-20 space-y-4">
           
           {isActive && (
-            <div className="bg-[#ff6363]/10 border border-[#ff6363]/30 rounded-[10px] p-3 text-xs text-[#ff6363] flex flex-col sm:flex-row items-center justify-between gap-2 font-mono">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#ff6363] animate-ping" />
-                <span>EXPORT IN PROGRESS — DO NOT REFRESH OR CLOSE THIS TAB FOR LIVE VIEW</span>
+            <div className="bg-[#ff6363]/10 border border-[#ff6363]/30 rounded-[10px] p-3 text-xs text-[#ff6363] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 font-mono">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-[#ff6363] animate-ping shrink-0" />
+                <span className="text-[11px] sm:text-xs leading-snug break-words">
+                  EXPORT IN PROGRESS — DO NOT REFRESH OR CLOSE THIS TAB FOR LIVE VIEW
+                </span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] text-[#9c9c9d]">Background worker active</span>
+              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 shrink-0">
+                <span className="text-[10px] text-[#9c9c9d]">Worker active</span>
                 <button
                   onClick={handleCancel}
-                  className="px-2.5 py-1 rounded-[6px] bg-[#1b1c1e]/60 border border-[#ff6363]/40 text-[#ff6363] hover:bg-[#ff6363]/20 text-[10px] transition-colors cursor-pointer"
+                  className="px-2.5 py-1 rounded-[6px] bg-[#1b1c1e]/60 border border-[#ff6363]/40 text-[#ff6363] hover:bg-[#ff6363]/20 text-[10px] transition-colors cursor-pointer shrink-0"
                 >
                   Cancel Export
                 </button>
@@ -703,22 +719,22 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             </div>
           )}
 
-          <div className="raycast-key-card p-6 sm:p-8 space-y-6">
+          <div className="raycast-key-card p-4 sm:p-8 space-y-5 sm:space-y-6">
             
             {/* Status Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#1b1c1e]">
-              <div className="space-y-1">
-                <div className="text-[11px] font-mono text-[#6a6b6c]">Job ID: {job.id}</div>
-                <div className="text-sm font-medium text-[#ffffff] flex items-center gap-2">
-                  {job.status === 'completed' && <span className="text-[#59d499]"><Icon.Check size={16} /></span>}
-                  {job.status === 'failed'    && <span className="text-red-400"><Icon.X size={16} /></span>}
-                  {job.status === 'cancelled' && <span className="text-amber-400"><Icon.X size={16} /></span>}
-                  {isActive && <Icon.Spinner size={16} />}
-                  <span>{job.progressMessage}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-[#1b1c1e]">
+              <div className="space-y-1 min-w-0">
+                <div className="text-[11px] font-mono text-[#6a6b6c] truncate">Job ID: {job.id}</div>
+                <div className="text-sm font-medium text-[#ffffff] flex items-center gap-2 break-words">
+                  {job.status === 'completed' && <span className="text-[#59d499] shrink-0"><Icon.Check size={16} /></span>}
+                  {job.status === 'failed'    && <span className="text-red-400 shrink-0"><Icon.X size={16} /></span>}
+                  {job.status === 'cancelled' && <span className="text-amber-400 shrink-0"><Icon.X size={16} /></span>}
+                  {isActive && <span className="shrink-0"><Icon.Spinner size={16} /></span>}
+                  <span className="leading-snug">{job.progressMessage}</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 {job.status === 'completed' && job.downloadUrl && (
                   <>
                     {job.zipSizeKb && (
@@ -759,7 +775,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                             alert('Download failed: ' + ((err as Error)?.message || 'network error'));
                           }
                         }}
-                        className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+                        className="raycast-button-primary px-3 sm:px-4 py-2 text-xs font-medium flex items-center gap-1.5 sm:gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
                       >
                         <Icon.Download />
                         <span>Download ZIP {isAdmin ? '(Admin Free Pass)' : '(Approved)'}</span>
@@ -767,15 +783,15 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     ) : job.paymentSubmitted ? (
                       <button
                         onClick={() => setIsPaywallOpen(true)}
-                        className="px-4 py-2 text-xs font-medium rounded-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-2 cursor-pointer"
+                        className="px-3 sm:px-4 py-2 text-xs font-medium rounded-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 sm:gap-2 cursor-pointer"
                       >
                         <Icon.Spinner size={14} />
-                        <span>Payment Submitted — Awaiting Admin Approval</span>
+                        <span>Payment Submitted — Awaiting Approval</span>
                       </button>
                     ) : (
                       <button
                         onClick={() => setIsPaywallOpen(true)}
-                        className="raycast-button-primary px-4 py-2 text-xs font-medium flex items-center gap-2 bg-[#ff6363] text-black font-semibold hover:bg-[#ff7575] cursor-pointer"
+                        className="raycast-button-primary px-3 sm:px-4 py-2 text-xs font-medium flex items-center gap-1.5 sm:gap-2 bg-[#ff6363] text-black font-semibold hover:bg-[#ff7575] cursor-pointer"
                       >
                         <Icon.Download />
                         <span>Pay & Unlock Download (₹{job.amount || 20})</span>
@@ -795,7 +811,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
             </div>
 
             {/* Pipeline Step Badges */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {STEPS.map((s) => (
                 <StepBadge key={s.key} state={stepState(job.status, s.key)} label={s.label} />
               ))}
@@ -808,7 +824,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   <Icon.X size={16} />
                   <span>Compilation Issue Diagnosis</span>
                 </div>
-                <p className="text-[#dcdcdc] font-mono text-[11px] leading-relaxed">
+                <p className="text-[#dcdcdc] font-mono text-[11px] leading-relaxed break-words">
                   {job.error || 'The export process encountered an unexpected error.'}
                 </p>
                 <div className="text-[11px] text-[#9c9c9d] pt-1 space-y-1">
@@ -825,11 +841,11 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
             {/* Preview, Logs & Quality Stats Tabs */}
             <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between border-b border-[#1b1c1e] pb-2">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-[#1b1c1e] pb-2.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                   <button
                     onClick={() => setTab('preview')}
-                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-2.5 sm:px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                       tab === 'preview'
                         ? 'bg-[#1b1c1e] text-white border border-[#363739]'
                         : 'text-[#6a6b6c] hover:text-white'
@@ -841,45 +857,46 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
 
                   <button
                     onClick={() => setTab('live')}
-                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-2.5 sm:px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                       tab === 'live'
                         ? 'bg-[#1b1c1e] text-white border border-[#363739]'
                         : 'text-[#6a6b6c] hover:text-white'
                     }`}
                   >
                     <Icon.Globe />
-                    <span>Live Interactive</span>
+                    <span className="hidden xs:inline">Live Interactive</span>
+                    <span className="xs:hidden">Live</span>
                   </button>
 
                   <button
                     onClick={() => setTab('logs')}
-                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-2.5 sm:px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                       tab === 'logs'
                         ? 'bg-[#1b1c1e] text-white border border-[#363739]'
                         : 'text-[#6a6b6c] hover:text-white'
                     }`}
                   >
                     <Icon.Terminal />
-                    <span>Execution Logs</span>
-                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse" />}
+                    <span>Logs</span>
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6363] animate-pulse shrink-0" />}
                   </button>
 
                   {job.status === 'completed' && (
                     <button
                       onClick={() => setTab('stats')}
-                      className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-2.5 sm:px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
                         tab === 'stats'
                           ? 'bg-[#1b1c1e] text-white border border-[#363739]'
                           : 'text-[#6a6b6c] hover:text-white'
                       }`}
                     >
                       <span className="text-[#59d499]"><Icon.Check size={14} /></span>
-                      <span>Quality & Stats</span>
+                      <span>Quality</span>
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0">
                   {tab === 'preview' && (
                     <div className="flex items-center gap-1 bg-[#1b1c1e] p-1 rounded-[6px] border border-[#363739]">
                       {(['desktop', 'tablet', 'mobile'] as const).map((vp) => (
@@ -902,7 +919,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                       href={getDirectBackendUrl(`/api/job/${job.id}/preview`)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-2.5 py-1.5 rounded-[6px] text-xs font-medium bg-[#1b1c1e] text-[#9c9c9d] hover:text-white hover:bg-[#252629] border border-[#363739] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-[6px] text-xs font-medium bg-[#1b1c1e] text-[#9c9c9d] hover:text-white hover:bg-[#252629] border border-[#363739] transition-colors flex items-center gap-1.5 cursor-pointer ml-auto sm:ml-0"
                       title="Open full screen preview in new tab"
                     >
                       <Icon.ExternalLink size={13} />
@@ -914,7 +931,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               </div>
 
               {tab === 'preview' ? (
-                <div className="raycast-key-card p-4 rounded-[10px] min-h-[300px] max-h-[550px] overflow-y-auto bg-[#040506] scrollbar-thin scrollbar-thumb-[#363739]">
+                <div className="raycast-key-card p-2 sm:p-4 rounded-[10px] min-h-[220px] sm:min-h-[300px] max-h-[550px] overflow-y-auto bg-[#040506] scrollbar-thin scrollbar-thumb-[#363739]">
                   {job.id ? (
                     <div className="transition-all duration-300 ease-in-out">
                       {(() => {
@@ -925,12 +942,12 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                             key={`${viewport}-${job.id}-${job.status}`}
                             src={screenshotSrc}
                             alt={`${viewport} screenshot`}
-                            className={`h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto transition-all duration-300 ${
+                            className={`h-auto rounded-[6px] border border-[#2f3031] shadow-xl block mx-auto transition-all duration-300 max-w-full ${
                               viewport === 'mobile'
-                                ? 'w-[340px] max-w-full'
+                                ? 'w-[340px]'
                                 : viewport === 'tablet'
-                                ? 'w-[560px] max-w-full'
-                                : 'w-full max-w-full'
+                                ? 'w-[560px]'
+                                : 'w-full'
                             }`}
                             onError={(e) => {
                               const target = e.currentTarget;
@@ -951,20 +968,20 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                   )}
                 </div>
               ) : tab === 'live' ? (
-                <div className="raycast-key-card p-0 rounded-[10px] h-[550px] overflow-hidden bg-[#040506] relative border border-[#2f3031] flex flex-col">
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#111214] border-b border-[#2f3031] text-[11px] text-[#8a8b8d]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#59d499]" />
+                <div className="raycast-key-card p-0 rounded-[10px] h-[380px] sm:h-[550px] overflow-hidden bg-[#040506] relative border border-[#2f3031] flex flex-col">
+                  <div className="flex items-center justify-between px-2.5 sm:px-3 py-1.5 bg-[#111214] border-b border-[#2f3031] text-[10px] sm:text-[11px] text-[#8a8b8d]">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#59d499] shrink-0" />
                       <span className="font-mono">Live Interactive Preview</span>
-                      <span className="text-[10px] text-[#6a6b6c] hidden sm:inline">(rendered live from backend server)</span>
+                      <span className="text-[10px] text-[#6a6b6c] hidden md:inline">(rendered live from backend server)</span>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       {job.format === 'html' && (
                         <Link
                           href={`/edit/${job.id}`}
                           className="text-[11px] text-[#ff6363] hover:text-[#ff7a7a] flex items-center gap-1 bg-[#ff6363]/10 px-2 py-0.5 rounded border border-[#ff6363]/20 font-medium transition-colors"
                         >
-                          <span>✏️ Edit Content</span>
+                          <span>✏️ Edit</span>
                         </Link>
                       )}
                       <a
@@ -974,7 +991,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                         className="text-[#9c9c9d] hover:text-white flex items-center gap-1 transition-colors"
                         title="Open full screen in a new tab"
                       >
-                        <span>Open in New Tab</span>
+                        <span className="hidden sm:inline">Open in New Tab</span>
+                        <span className="sm:hidden">Open</span>
                         <Icon.ExternalLink size={11} />
                       </a>
                     </div>
@@ -990,7 +1008,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
               ) : tab === 'logs' ? (
                 <div
                   ref={logContainerRef}
-                  className="raycast-key-card p-4 rounded-[10px] font-mono text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5"
+                  className="raycast-key-card p-3 sm:p-4 rounded-[10px] font-mono text-[11px] sm:text-xs text-[#9c9c9d] bg-[#040506] max-h-[350px] overflow-y-auto space-y-1.5 break-all sm:break-words"
                 >
                   {job.logs.map((l, idx) => (
                     <div key={idx} className="leading-relaxed">
@@ -1000,8 +1018,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                 </div>
               ) : (
                 /* Quality & Telemetry Stats Tab */
-                <div className="raycast-key-card p-6 rounded-[10px] space-y-5 bg-[#040506] text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="raycast-key-card p-4 sm:p-6 rounded-[10px] space-y-5 bg-[#040506] text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     <div className="p-3.5 rounded-[8px] bg-[#111214] border border-[#2f3031] space-y-1">
                       <div className="text-[10px] font-mono text-[#6a6b6c] uppercase">Target Architecture</div>
                       <div className="text-white font-medium text-sm capitalize">{job.format} Engine</div>

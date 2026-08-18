@@ -74,14 +74,6 @@ const CRITICAL_OVERRIDE_CSS = `
     visibility: visible !important;
   }
 
-  /* ── Framer word-by-word text reveal: only reveal spans NOT inside scroll-colour containers ──
-     Spans inside a scroll-linked reveal section must stay at their dynamic opacity;
-     only standalone hidden spans (outside reveal containers) get forced visible. */
-  span[style*="opacity: 0.001"]:not([data-sc-scroll-word]),
-  span[style*="opacity:0.001"]:not([data-sc-scroll-word]) {
-    opacity: 1 !important;
-  }
-
   /* ── Universal site headers — only ensure they layer above content ──
      We deliberately do NOT force position: sticky here — sites that use
      position: fixed would break (nav disappears on scroll past header).
@@ -337,194 +329,100 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
-  /* ── 2. Universal Scroll-Reveal (IntersectionObserver) ── */
-  // Determines if an element's transform is an animation initial state vs a layout transform.
-  // Framer animation initial states are typically translateY(N px) with N > 0, or scale(< 1)
-  // combined with opacity: 0. Layout transforms (translate(-50%,-50%), etc.) are preserved.
-  function isAnimationTransform(style) {
-    if (!style) return false;
-    // Pure translateY offset (slide-in animation state)
-    if (/translateY\(([1-9]|[1-9]\d)px\)/.test(style)) return true;
-    // opacity near 0 + any transform = animation initial state
-    if (/opacity:\s*0(\.0+)?[;\s"']/.test(style) && /transform:/.test(style)) return true;
-    return false;
-  }
-
-  function initScrollReveal() {
-    var TRANSITION = 'opacity 0.65s cubic-bezier(0.23,1,0.32,1), transform 0.65s cubic-bezier(0.23,1,0.32,1), filter 0.65s ease';
-    var elements = [];
-    var seen = new Set();
-
-    // Collect all candidates that are in a "hidden initial" state
-    // EXCLUDE center-hinted elements (Framer navbars) — they need translateX(-50%) preserved
-    var candidates = document.querySelectorAll(
-      '[data-framer-appear-id]:not([data-framer-layout-hint-center-x]), ' +
-      '[data-aos], ' +
-      '[data-sal], ' +
-      '[data-animate], ' +
-      '[data-animation], ' +
-      '.aos-init:not(.aos-animate), ' +
-      '.sal-animate, ' +
-      '.animated:not(.fadeIn):not(.slideIn)'
-    );
-
-    candidates.forEach(function (el) {
-      // Skip word-reveal spans — managed exclusively by initScrollColourText
-      if (el.tagName === 'SPAN' && el.getAttribute('data-sc-scroll-word')) return;
-      if (!seen.has(el)) {
-        seen.add(el);
-        elements.push(el);
-      }
-    });
-
-    // Also include inline-style animation initial states (translateY + opacity:0 pattern)
-    // But skip center-hinted elements (navbars) and word-reveal spans
-    document.querySelectorAll('[style]').forEach(function (el) {
-      if (el.getAttribute('data-framer-layout-hint-center-x')) return;
-      // Skip word-reveal spans — managed exclusively by initScrollColourText
-      if (el.tagName === 'SPAN' && el.getAttribute('data-sc-scroll-word')) return;
-      var s = el.getAttribute('style') || '';
-      if (isAnimationTransform(s) && !seen.has(el)) {
-        seen.add(el);
-        elements.push(el);
-      }
-    });
-
-    if (!elements.length) return;
-
-    function revealEl(el) {
-      el.style.opacity = '1';
-      var sFilter = el.style.filter || '';
-      if (/blur/.test(sFilter)) {
-        var cleanFilter = sFilter.replace(/blur\([^)]*\)/g, '').trim();
-        el.style.filter = cleanFilter || '';
-      }
-      el.classList.add('aos-animate');
-      el.setAttribute('data-sitecompiler-reveal', 'visible');
-      // Only reset transform if it looks like an animation initial state,
-      // NOT if it's a layout-critical transform (translate(-50%), scale for sizing, etc.)
-      var s = el.getAttribute('style') || '';
-      if (isAnimationTransform(s) && !el.getAttribute('data-framer-layout-hint-center-x') && !el.matches('[data-framer-name*="Avatar"], [data-framer-name*="avatar"], [data-framer-name*="Photo"], [data-framer-name*="Portrait"], [class*="avatar"]')) {
-        el.style.transform = 'none';
-      }
-    }
-
-    if (!('IntersectionObserver' in window)) {
-      elements.forEach(revealEl);
-      return;
-    }
-
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          var el = entry.target;
-          el.style.transition = TRANSITION;
-          revealEl(el);
-          io.unobserve(el);
-        }
-      });
-    }, { threshold: 0.06, rootMargin: '0px 0px -30px 0px' });
-
-    elements.forEach(function (el) {
-      if (window.getComputedStyle(el).opacity === '0' ||
-          (el.style.opacity && parseFloat(el.style.opacity) < 0.01)) {
-        io.observe(el);
-      } else {
-        // Already visible — show immediately
-        revealEl(el);
-      }
-    });
-  }
-
-  /* ── 3. Scroll-linked word reveal (Framer quote / hero paragraph sections) ──
-     Handles two Framer reveal patterns:
-       A) colour  — span has will-change:color + dim rgba colour (e.g. rgba(0,0,0,0.1))
-       B) opacity — span has opacity near 0 (0.001 – 0.15) inside a paragraph / quote block
-     Both patterns animate word-by-word as the section scrolls past the 70% viewport threshold.
-     Uses a single rAF loop for 60fps (no scroll-listener jank). */
+  /* ── 2. Word-by-Word Scroll-Linked Text Reveal Engine ──
+     Targeted EXCLUSIVELY at the Quote / Manifesto paragraph block with word-split spans.
+     Does NOT touch or affect any other cards, sections, or elements on the site.
+     Animation:
+       Staggers illumination sequentially word-by-word (Word 0 -> Word 1 -> Word 2 -> ... -> Word N)
+       as the paragraph scrolls through the viewport (between 78% and 28% vh), matching the original site 100%.
+  */
   function initScrollColourText() {
-    /* ── Pattern A: colour-shift words ── */
-    var colourWords = Array.from(document.querySelectorAll(
-      '[style*="will-change:color"],[style*="will-change: color"]'
-    )).filter(function (el) {
-      var s = el.getAttribute('style') || '';
-      return /rgba?\(/.test(s);
-    });
-
-    /* ── Pattern B: opacity word-reveal spans inside text containers ── */
-    var opacityWords = [];
-    // Find containers that Framer uses for paragraph text reveals
-    var textContainers = document.querySelectorAll(
-      '[data-framer-name*="Text"],[data-framer-name*="Quote"],[data-framer-name*="Hero"],' +
-      '[data-framer-name*="Paragraph"],[data-framer-name*="Body"],[data-framer-name*="Tagline"],' +
-      '.framer-text'
-    );
-    textContainers.forEach(function (container) {
-      container.querySelectorAll('span[style]').forEach(function (span) {
-        var s = span.getAttribute('style') || '';
-        var opM = s.match(/opacity:\s*([0-9.]+)/);
-        if (opM && parseFloat(opM[1]) < 0.16) {
-          span.setAttribute('data-sc-scroll-word', '1');
-          opacityWords.push(span);
-        }
+    function getQuoteBlock() {
+      var quoteSection = document.querySelector('[data-framer-name="Quote Section"]') ||
+                         document.querySelector('[data-framer-name*="Quote"]');
+      var container = quoteSection || document.body;
+      var allSpans = Array.from(container.querySelectorAll('span')).filter(function (s) {
+        var style = s.getAttribute('style') || '';
+        return (style.includes('margin-right: 0.25em') || style.includes('margin-right:0.25em') || style.includes('will-change: color') || style.includes('will-change:color')) &&
+               (style.includes('rgba(0, 0, 0, 0.1') || style.includes('rgba(0,0,0,0.1') || style.includes('color: var('));
       });
-    });
-    // Also scan any span[style*="opacity: 0.001"] that were not already in a container
-    document.querySelectorAll('span[style*="opacity: 0.001"],span[style*="opacity:0.001"]').forEach(function (span) {
-      if (!span.getAttribute('data-sc-scroll-word')) {
-        span.setAttribute('data-sc-scroll-word', '1');
-        opacityWords.push(span);
-      }
-    });
 
-    var allWords = colourWords.concat(opacityWords);
-    if (!allWords.length) return;
+      if (!allSpans.length) return null;
 
-    // Pre-compute the reveal colour for each span (bright target)
-    allWords.forEach(function (span) {
-      if (!span.getAttribute('data-sc-reveal-target')) {
-        var s = span.getAttribute('style') || '';
-        var existingColor = span.getAttribute('data-reveal-color');
-        if (!existingColor) {
-          // Infer from background — dark bg => white, light bg => near-black
-          var bg = window.getComputedStyle(document.body).backgroundColor;
-          var isDark = /rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.test(bg) &&
-            parseInt(RegExp.$1) + parseInt(RegExp.$2) + parseInt(RegExp.$3) < 200;
-          existingColor = isDark ? 'rgb(240,240,240)' : 'rgb(17,17,17)';
-        }
-        span.setAttribute('data-sc-reveal-target', existingColor);
-      }
-    });
+      var parent = allSpans[0].parentElement;
+      var words = Array.from(parent.querySelectorAll(':scope > span')).filter(function (s) {
+        return (s.textContent || '').trim().length > 0;
+      });
+
+      if (words.length < 4) return null;
+
+      words.forEach(function (w) {
+        w.style.transition = 'color 0.16s linear, opacity 0.16s linear';
+        w.style.willChange = 'color, opacity';
+      });
+
+      return { parent: parent, words: words };
+    }
+
+    var bg = window.getComputedStyle(document.body).backgroundColor;
+    var isDark = /rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.test(bg) &&
+      (parseInt(RegExp.$1) + parseInt(RegExp.$2) + parseInt(RegExp.$3) < 200);
+
+    var activeColor = isDark ? 'rgb(250, 250, 250)' : 'rgb(17, 17, 17)';
+    var dimColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
 
     var ticking = false;
     function update() {
-      var viewH = window.innerHeight;
-      var revealZone = viewH * 0.72; // words reveal when top < 72% vh
-      allWords.forEach(function (span) {
-        var rect = span.getBoundingClientRect();
-        // progress: 0 (element top at revealZone) → 1 (element top at 30% vh)
-        var raw = (revealZone - rect.top) / (revealZone - viewH * 0.30);
-        var progress = Math.max(0, Math.min(1, raw));
-        var target = span.getAttribute('data-sc-reveal-target') || 'rgb(17,17,17)';
-        if (span.getAttribute('data-sc-scroll-word')) {
-          // opacity pattern: lerp from ~0.05 to 1
-          span.style.opacity = (0.05 + progress * 0.95).toFixed(3);
+      var block = getQuoteBlock();
+      if (!block) { ticking = false; return; }
+
+      var vh = window.innerHeight || 850;
+      var startZone = vh * 0.78;
+      var endZone = vh * 0.28;
+
+      var rect = block.parent.getBoundingClientRect();
+      var rawProgress = (startZone - rect.top) / (startZone - endZone);
+      var progress = Math.max(0, Math.min(1, rawProgress));
+      var total = block.words.length;
+
+      block.words.forEach(function (span, idx) {
+        var threshold = idx / total;
+        if (progress >= threshold) {
+          span.style.setProperty('color', activeColor, 'important');
+          span.style.opacity = '1';
+          span.style.filter = 'none';
         } else {
-          // colour pattern: snap between dim and target
-          span.style.color = progress >= 1 ? target : 'rgba(0,0,0,0.08)';
+          span.style.setProperty('color', dimColor, 'important');
         }
       });
+
       ticking = false;
     }
 
-    window.addEventListener('scroll', function () {
-      if (!ticking) { ticking = true; requestAnimationFrame(update); }
-    }, { passive: true });
-    // Run once on init to set correct initial state
+    function onScroll() {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    document.addEventListener('wheel', onScroll, { passive: true });
+    document.addEventListener('touchmove', onScroll, { passive: true });
+
+    if ('MutationObserver' in window) {
+      var mo = new MutationObserver(onScroll);
+      mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    }
+
     requestAnimationFrame(update);
+    setTimeout(update, 100);
+    setTimeout(update, 400);
+    setTimeout(update, 1000);
   }
 
-  /* ── 4. Smooth anchor scroll ── */
+  /* ── 3. Smooth anchor scroll ── */
   function initAnchorScroll() {
     document.querySelectorAll('a[href*="#"]').forEach(function (a) {
       a.addEventListener('click', function (e) {
@@ -542,40 +440,8 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
-  /* ── 5. Universal card / item hover effects ── */
-  function initCardHovers() {
-    var selectors = [
-      '[data-framer-name*="Card"]',
-      '[data-framer-name*="Item"]',
-      '[data-framer-name*="Project"]',
-      '.w-dyn-item',
-      '.card',
-      '[class*="card"]',
-    ];
-    var hoverEls = new Set();
-    selectors.forEach(function (sel) {
-      try {
-        document.querySelectorAll(sel).forEach(function (el) {
-          if (!hoverEls.has(el)) {
-            hoverEls.add(el);
-            el.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
-            el.addEventListener('mouseenter', function () {
-              el.style.transform = 'translateY(-4px) scale(1.005)';
-              el.style.boxShadow = '0 16px 48px rgba(0,0,0,0.12)';
-            });
-            el.addEventListener('mouseleave', function () {
-              el.style.transform = '';
-              el.style.boxShadow = '';
-            });
-          }
-        });
-      } catch (e) {}
-    });
-  }
-
-  /* ── 6. Mobile navigation toggle ── */
+  /* ── 4. Mobile navigation toggle ── */
   function initMobileNav() {
-    // Common mobile hamburger patterns
     var toggleSelectors = [
       '.menu-toggle', '.hamburger', '.nav-toggle', '.mobile-menu-toggle',
       '[data-nav-toggle]', '.w-nav-button', '[class*="hamburger"]',
@@ -612,7 +478,7 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
-  /* ── 7. Sticky header on scroll ── */
+  /* ── 5. Sticky header on scroll ── */
   function initStickyHeader() {
     var header = document.querySelector(
       'header.site-header, header.header, .site-header, .masthead, ' +
@@ -630,42 +496,7 @@ const ANIMATION_SHIM_JS = `
     }, { passive: true });
   }
 
-  /* ── 8. Scroll-linked counter animation ── */
-  function initCounters() {
-    var counters = document.querySelectorAll('[data-counter], [class*="counter"], .count-up');
-    counters.forEach(function (el) {
-      var target = parseInt(el.textContent || '0', 10);
-      if (!target) return;
-      el.textContent = '0';
-      var observer = new IntersectionObserver(function (entries) {
-        if (!entries[0].isIntersecting) return;
-        observer.disconnect();
-        var start = 0;
-        var step = target / 60;
-        var timer = setInterval(function () {
-          start += step;
-          if (start >= target) { clearInterval(timer); el.textContent = target.toString(); }
-          else { el.textContent = Math.floor(start).toString(); }
-        }, 16);
-      }, { threshold: 0.5 });
-      observer.observe(el);
-    });
-  }
-
-  /* ── 9. Parallax scroll on hero sections ── */
-  function initParallax() {
-    var parallaxEls = document.querySelectorAll('[data-parallax], [class*="parallax"]');
-    if (!parallaxEls.length) return;
-    window.addEventListener('scroll', function () {
-      var sy = window.scrollY;
-      parallaxEls.forEach(function (el) {
-        var speed = parseFloat(el.getAttribute('data-parallax-speed') || '0.3');
-        el.style.transform = 'translateY(' + (sy * speed) + 'px)';
-      });
-    }, { passive: true });
-  }
-
-  /* ── 10. Framer avatar 60fps smooth grayscale-to-color & scale scroll engine ── */
+  /* ── 6. Framer avatar 60fps smooth grayscale-to-color & scale scroll engine ── */
   function initFramerAvatar() {
     var avatarSelectors = [
       '[data-framer-name="Avatar - Back"]',
@@ -712,18 +543,13 @@ const ANIMATION_SHIM_JS = `
       if (currentY === -1) {
         currentY = targetY;
       } else {
-        // Smooth lerp (linear interpolation with damping) for ultra-fluid 60fps animation
         currentY += (targetY - currentY) * 0.14;
       }
 
-      // Scroll progress from 0 (at top of page) to 1 (scrolled 380px)
       var scrollDist = Math.max(0, currentY);
       var progress = Math.min(1, scrollDist / 380);
-
-      // Smooth cubic ease-out curve
       var ease = 1 - Math.pow(1 - progress, 2.5);
 
-      // 1. Grayscale & Contrast: 100% grayscale at top -> 0% (vibrant color & glow) as you scroll
       var grayscaleVal = (1 - ease) * 100;
       var contrastVal = 1 + (1 - ease) * 0.08;
       var brightnessVal = 0.92 + ease * 0.08;
@@ -731,7 +557,6 @@ const ANIMATION_SHIM_JS = `
         ? 'grayscale(' + grayscaleVal.toFixed(1) + '%) contrast(' + contrastVal.toFixed(2) + ') brightness(' + brightnessVal.toFixed(2) + ')'
         : 'none';
 
-      // 2. Scale: starts at 0.75 and scales up smoothly to 1.0
       var scaleVal = 0.75 + ease * 0.25;
 
       avatarNodes.forEach(function (el) {
@@ -749,14 +574,13 @@ const ANIMATION_SHIM_JS = `
       }
     }
 
-    // Set initial black & white filter immediately on page load
     render();
 
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll, { passive: true });
   }
 
-  /* ── 11. Marquee / infinite scroll text ── */
+  /* ── 7. Marquee / infinite scroll text ── */
   function initMarquee() {
     var marquees = document.querySelectorAll('[class*="marquee"], [data-marquee]');
     marquees.forEach(function (el) {
@@ -777,7 +601,7 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
-  /* ── 12. Lightbox / gallery (Webflow / generic) ── */
+  /* ── 8. Lightbox / gallery (Webflow / generic) ── */
   function initLightbox() {
     var triggers = document.querySelectorAll('[data-lightbox], .w-lightbox');
     if (!triggers.length) return;
@@ -802,7 +626,7 @@ const ANIMATION_SHIM_JS = `
     overlay.addEventListener('click', function () { overlay.style.display = 'none'; });
   }
 
-  /* ── 13. Autonomous 3D Carousel / Perspective Cylinder Engine ── */
+  /* ── 9. Autonomous 3D Carousel / Perspective Cylinder Engine ── */
   function init3DCarouselAndSlider() {
     var circles = document.querySelectorAll(
       '[data-framer-name="Circle"], [data-framer-name="Slider"], [data-framer-name*="Carousel"], [data-framer-name*="3D"]'
@@ -872,21 +696,12 @@ const ANIMATION_SHIM_JS = `
     applyBreakpoints();
     initFramerAvatar();
     init3DCarouselAndSlider();
-    initScrollReveal();
     initScrollColourText();
     initAnchorScroll();
-    initCardHovers();
     initMobileNav();
     initStickyHeader();
-    initCounters();
-    initParallax();
     initMarquee();
     initLightbox();
-
-    // Re-run scroll reveal after images load (layout shifts)
-    window.addEventListener('load', function () {
-      setTimeout(initScrollReveal, 300);
-    });
   }
 
   if (document.readyState === 'loading') {
@@ -986,52 +801,51 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
     fs.writeFileSync(path.join(scTaggedDir, pageItem.htmlFilename), $.html(), 'utf-8');
 
     // ── Head cleanup ──
-    // Remove external stylesheets (bundled into styles.css)
+    // Remove external stylesheets ONLY (these are bundled into styles.css).
+    // We intentionally preserve ALL inline <style> tags — they contain:
+    //   - @font-face declarations (Framer, Webflow custom fonts)
+    //   - CSS custom property tokens (:root variables)
+    //   - CSS animation keyframes & transitions
+    //   - Framer responsive breakpoint hashes (data-framer-breakpoint-css)
+    //   - Webflow/GSAP animation initial states
+    // Removing any of these breaks animations and layout.
     $('link[rel="stylesheet"]').remove();
 
-    // RC3 fix: Remove inline <style> tags that were captured into styles.css and bundled.
-    // These cause double-definition conflicts where styles.css can override inline values.
-    // PRESERVE:
-    //   - <style data-framer-font-css>    — font-face declarations needed for immediate paint
-    //   - <style data-framer-breakpoint-css> — Framer responsive breakpoint hashes
-    //   - <style> tags whose ONLY content is @font-face or :root CSS custom properties
-    //     (design tokens; removing them would break the entire color/spacing system)
-    $('style').each((_, el) => {
-      const $el = $(el);
-      // Always keep specially-attributed Framer style blocks
-      if ($el.attr('data-framer-font-css') !== undefined ||
-          $el.attr('data-framer-breakpoint-css') !== undefined ||
-          $el.attr('data-framer-hydrate-v2') !== undefined) {
-        return;
-      }
-      const content = ($el.html() || '').trim();
-      // Keep blocks that are primarily @font-face or :root token definitions
-      const isFontOrTokenBlock = (
-        (content.match(/@font-face/gi) || []).length > 0 ||
-        // :root-only block — compatible multiline check (no /s flag needed)
-        (/^\s*:root\s*\{/.test(content) && content.indexOf('{') === content.lastIndexOf('{'))
-      );
-      if (isFontOrTokenBlock) return;
-      // Remove everything else — these were captured into styles.css already
-      $el.remove();
-    });
-
-    // Remove editor overlays
+    // Remove only editor overlays (never the site's own styles)
     $('#__framer-editorbar').remove();
     $('[id*="editor-bar"]').remove();
     $('.__framer-inspector').remove();
 
-    // Remove social tracking pixels and beacons (not analytics scripts — those were already removed)
+    // Remove social tracking pixels
     $('img[src*="facebook.com/tr"]').remove();
     $('img[src*="google-analytics"]').remove();
 
-    // ── Inject fonts, critical CSS, and consolidated styles ──
-    // Note: Framer font @font-face rules are already embedded in the
-    // captured inline <style data-framer-font-css> block — no injection needed.
+    // ── Localize external <script src> to downloaded copies where available ──
+    // If a script was downloaded by the crawler (found in assetMap), rewrite the
+    // src to the local copy. Otherwise keep the original CDN URL so it still loads.
+    $('script[src]').each((_, el) => {
+      const $el = $(el);
+      const src = $el.attr('src') || '';
+      if (!src || src.startsWith('data:') || src.startsWith('blob:')) return;
+      // Resolve to absolute URL first
+      let absUrl = src;
+      try { absUrl = new URL(src, baseUrl).href; } catch {}
+      // Check asset map for a locally downloaded copy
+      if (assetMap[absUrl]) {
+        $el.attr('src', assetMap[absUrl]);
+      } else if (assetMap[src]) {
+        $el.attr('src', assetMap[src]);
+      }
+      // else: keep original URL — CDN fallback ensures it still loads
+    });
+
+    // ── Inject bundled styles (supplements, not replaces, original styles) ──
     $('head').append('  <link rel="stylesheet" href="./styles.css">\n');
     $('head').append(CRITICAL_OVERRIDE_CSS);
 
-    // ── Inject animation shim ──
+    // ── Inject animation shim AFTER original scripts (supplement role) ──
+    // Runs after all original Framer/GSAP/Webflow scripts so it only fills
+    // gaps — doesn't override the original framework behaviour.
     $('body').append('  <script src="./script.js"></script>\n');
 
     // Character-exact HTML serialization preserves token spacing without destructive multi-line indentation
@@ -1060,6 +874,35 @@ export async function buildHtmlExport(options: BuildHtmlOptions): Promise<BuildH
   }));
   const editorHtml = generateStandaloneEditorHtml(editorPages);
   fs.writeFileSync(path.join(outputDir, 'editor.html'), editorHtml, 'utf-8');
+
+  // Generate Netlify/Cloudflare/Render Static _headers for robust ES module, font, and CORS support
+  const netlifyHeaders = `/*
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+
+/*.js
+  Content-Type: application/javascript; charset=utf-8
+
+/*.mjs
+  Content-Type: application/javascript; charset=utf-8
+
+/assets/scripts/*.mjs
+  Content-Type: application/javascript; charset=utf-8
+
+/*.css
+  Content-Type: text/css; charset=utf-8
+
+/*.woff2
+  Content-Type: font/woff2
+
+/*.woff
+  Content-Type: font/woff
+`;
+  fs.writeFileSync(path.join(outputDir, '_headers'), netlifyHeaders, 'utf-8');
+
+  // Generate Netlify/Static _redirects for clean URLs and SPA routing
+  const netlifyRedirects = `/*    /index.html   200\n`;
+  fs.writeFileSync(path.join(outputDir, '_redirects'), netlifyRedirects, 'utf-8');
 
   return {
     outputDir,

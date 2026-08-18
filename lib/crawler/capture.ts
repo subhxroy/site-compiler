@@ -103,14 +103,14 @@ function sanitizeFilename(urlStr: string, index: number, defaultExt: string, cat
     const parsed = new URL(urlStr);
     let basename = path.basename(parsed.pathname).split('?')[0].split('#')[0];
     if (category === 'scripts' && basename.includes('.')) {
-      // Keep exact script / module basename so internal ES module imports (import "./foo.mjs") resolve cleanly
-      const clean = basename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      // Keep exact script / module basename so internal ES module imports (import "./foo@1.0.mjs") resolve cleanly
+      const clean = basename.replace(/[^a-zA-Z0-9_.\-@~+]/g, '_');
       if (clean.length > 0 && clean.length <= 120) return clean;
     }
     if (!basename.includes('.')) {
       basename = `asset_${index}${defaultExt}`;
     } else {
-      basename = `${index}_${basename.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+      basename = `${index}_${basename.replace(/[^a-zA-Z0-9_.\-@~+]/g, '_')}`;
       if (basename.length > 80) basename = `asset_${index}${defaultExt}`;
     }
     return basename;
@@ -236,11 +236,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     log(`[Browser Engine] Located Playwright binary: ${execPath}`);
   }
 
-  // NOTE: --single-process / --no-zygote were removed — they destabilize Chromium
-  // on heavy SPA sites (Framer) by collapsing all renderers into one process.
-  // Locally they hard-crash the browser ~2s after load; on Render free tier they
-  // leave the page alive but with an empty DOM, so link discovery finds 0 anchors
-  // and only the home page gets captured. Multi-process is the stable default.
+  // NOTE: Optimized Chromium flags for low-memory (512MB RAM) and headless hosting environments.
   const containerArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -248,6 +244,20 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
     '--disable-accelerated-2d-canvas',
     '--disable-gpu',
     '--disable-blink-features=AutomationControlled',
+    '--no-first-run',
+    '--disable-background-networking',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-breakpad',
+    '--disable-component-extensions-with-background-pages',
+    '--disable-extensions',
+    '--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints',
+    '--disable-ipc-flooding-protection',
+    '--disable-renderer-backgrounding',
+    '--enable-features=NetworkService,NetworkServiceInProcess',
+    '--force-color-profile=srgb',
+    '--mute-audio',
+    '--js-flags=--max-old-space-size=256',
   ];
 
   let browser!: Browser;
@@ -270,7 +280,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       browser = await chromium.launch({
         headless: true,
         ...(execPath && { executablePath: execPath }),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--js-flags=--max-old-space-size=256'],
       });
     }
     context = await browser.newContext({
@@ -389,7 +399,52 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
   const collectedStylesheetData: Array<{ type: 'inline' | 'link'; content?: string; href?: string }> = [];
 
   const crawlStartTime = Date.now();
-  const MAX_CRAWL_DURATION_MS = 2.5 * 60 * 1000; // 2.5 min max crawl budget to guarantee total pipeline finishes well under 5 min
+  // Raised to 6 minutes to allow full-site crawl on 512MB single-core free tier servers
+  const MAX_CRAWL_DURATION_MS = 6 * 60 * 1000;
+
+  // ── Sitemap.xml Automatic Page Discovery ──────────────────────────────
+  try {
+    const sitemapCandidates = [
+      new URL('/sitemap.xml', normalizedEntryUrl).href,
+      new URL('/sitemap_index.xml', normalizedEntryUrl).href,
+      new URL('/sitemap-pages.xml', normalizedEntryUrl).href,
+    ];
+
+    for (const smUrl of sitemapCandidates) {
+      try {
+        const smSafety = await validateUrlForSsrfAsync(smUrl);
+        if (!smSafety.valid) continue;
+        const smRes = await context.request.get(smUrl, { timeout: 5000 });
+        if (smRes.ok()) {
+          const smText = await smRes.text();
+          const locMatches = smText.matchAll(/<loc>([^<]+)<\/loc>/gi);
+          let addedCount = 0;
+          for (const locMatch of locMatches) {
+            const rawLoc = (locMatch[1] || '').trim();
+            if (!rawLoc) continue;
+            const normLoc = normalizeUrl(rawLoc);
+            try {
+              const parsedLoc = new URL(normLoc);
+              const cleanHost = (h: string) => h.toLowerCase().replace(/^www\./, '');
+              if (cleanHost(parsedLoc.hostname) === cleanHost(targetHost)) {
+                if (!visitedUrls.has(normLoc) && !pagesToCrawl.includes(normLoc)) {
+                  const isBinaryPath = /\.(png|jpe?g|gif|webp|avif|svg|ico|pdf|zip|mp[34]|woff2?|css|js|xml)($|\/)/i.test(parsedLoc.pathname);
+                  if (!isBinaryPath) {
+                    pagesToCrawl.push(normLoc);
+                    addedCount++;
+                  }
+                }
+              }
+            } catch {}
+          }
+          if (addedCount > 0) {
+            log(`[Sitemap Discovery] Discovered ${addedCount} pages from ${smUrl}`);
+            break;
+          }
+        }
+      } catch {}
+    }
+  } catch {}
 
   try {
     let pageCount = 0;
@@ -426,7 +481,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
-      const gotoTimeout = isEntry ? 15000 : 8000;
+      // Generous timeout for 512MB single-core CPU hosting (30s entry, 20s subpages)
+      const gotoTimeout = isEntry ? 30000 : 20000;
 
       try {
         try {
@@ -434,11 +490,11 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         } catch {
           log(`[Browser Engine] domcontentloaded timeout on ${currentUrl}, checking DOM content fallback...`);
           try {
-            await page.goto(currentUrl, { waitUntil: 'load', timeout: 5000 });
+            await page.goto(currentUrl, { waitUntil: 'load', timeout: 10000 });
           } catch {}
         }
         
-        try { await page.waitForLoadState('networkidle', { timeout: 1500 }); } catch {}
+        try { await page.waitForLoadState('networkidle', { timeout: 2000 }); } catch {}
 
         // ── Agentic Engine: Smart Preloader Detection & Hydration Wait ─────
         log(`[Agent Engine] Inspecting DOM & awaiting preloader resolution on ${currentUrl}...`);
@@ -446,7 +502,7 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
         try {
           await page.evaluate(async (isEntryPage: boolean) => {
             const startTime = Date.now();
-            const maxWait = isEntryPage ? 7500 : 2500; // Wait up to 7.5s for entry, 2.5s for subpages
+            const maxWait = isEntryPage ? 10000 : 5000; // Wait up to 10s for entry, 5s for subpages on slow CPU
 
             const preloaderSelectors = [
               '.loader-wrap', '.loader-wrap-heading', '.preloader', '#preloader',
@@ -1046,22 +1102,22 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
       }
     }
 
-    // Sort by visual priority: images & fonts first (most visible), scripts last
+    // Sort by visual & interactive priority: fonts & scripts first (so typography, interactions & animations work), images next, video last
     const priorityOrder = (u: string): number => {
       const lower = u.toLowerCase().split('?')[0];
       if (lower.match(/\.(woff2?|ttf|otf|eot)/)) return 0;    // fonts — highest
-      if (lower.match(/\.(png|jpe?g|gif|webp|avif|svg|ico)/)) return 1; // images
-      if (lower.match(/\.(mp4|webm|ogg|mov)/)) return 2;       // video
-      if (lower.match(/\.(m?js|wasm)/)) return 3;              // scripts — lowest
-      return 1;
+      if (lower.match(/\.(m?js|wasm)/)) return 1;              // scripts, modules & animations — high priority
+      if (lower.match(/\.(png|jpe?g|gif|webp|avif|svg|ico)/)) return 2; // images
+      if (lower.match(/\.(mp4|webm|ogg|mov)/)) return 3;       // video
+      return 2;
     };
     mergedAssetUrls.sort((a, b) => priorityOrder(a) - priorityOrder(b));
 
-    const cappedAssetUrls = mergedAssetUrls.slice(0, 600); // RC4: raised from 300 → 600
+    const cappedAssetUrls = mergedAssetUrls.slice(0, 1500); // raised to 1500 to guarantee 100% replication of all scripts & assets
 
     log(`Downloading ${cappedAssetUrls.length} total assets in parallel (${mergedAssetUrls.length} discovered)...`);
 
-    const ASSET_CONCURRENCY = 12;
+    const ASSET_CONCURRENCY = 6;
     const downloadedManifestItems: Array<ExtractedAsset | null> = new Array(cappedAssetUrls.length).fill(null);
 
     let nextAssetIndex = 0;

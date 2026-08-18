@@ -1,5 +1,6 @@
 import { captureSite } from '../crawler/capture';
 import { buildHtmlExport } from '../generator/html/build';
+import { buildRawCopyExport } from '../generator/html/raw-copy';
 import { detectSections } from '../detector/section-detector';
 import { buildNextJsExport } from '../generator/nextjs/page-assembler';
 import { createJobZip } from '../zip/build-zip';
@@ -57,14 +58,28 @@ export async function processExportJob(jobId: string): Promise<void> {
       'Phase 2: Cleaning DOM and parsing CSS'
     );
 
-    const htmlResult = await buildHtmlExport({
-      jobId,
-      baseUrl: job.url,
-      pages: crawlResult.pages,
-    });
+    let htmlResult: { outputDir: string; indexHtmlPath: string; stylesCssPath?: string; scriptJsPath?: string; assetCount: number; cleanedHtml?: string; pageCount: number };
+    try {
+      htmlResult = await buildHtmlExport({
+        jobId,
+        baseUrl: job.url,
+        pages: crawlResult.pages,
+      });
+      console.log(`[job:${jobId}] PARSE_END`);
+    } catch (parseErr: unknown) {
+      // HTML processing failed — fall back to raw copy (zero transformation)
+      const parseErrMsg = (parseErr as Error).message || String(parseErr);
+      console.warn(`[job:${jobId}] HTML processing failed (${parseErrMsg}) — falling back to raw copy export`);
+      updateJob(jobId, { progressMessage: 'HTML processing failed — falling back to raw copy export...' }, `WARNING: parse failed, using raw copy: ${parseErrMsg}`);
+      htmlResult = await buildRawCopyExport({
+        jobId,
+        baseUrl: job.url,
+        pages: crawlResult.pages,
+      });
+      console.log(`[job:${jobId}] RAW_COPY_FALLBACK_END`);
+    }
 
     throwIfCancelled(jobId);
-    console.log(`[job:${jobId}] PARSE_END`);
 
     // ── Phase 2b: Validate HTML output ──────────────────────────────────────
     currentPhase = 'validating';

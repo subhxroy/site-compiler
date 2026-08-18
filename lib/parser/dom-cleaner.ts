@@ -158,19 +158,29 @@ export function cleanDom(
 
   const baseHost = new URL(baseUrl).hostname;
 
-  // 1. Remove analytics, tracking, editor overlays, & scroll-hijackers that break native scrolling
-  const trackingKeywords = [
-    'google-analytics', 'googletagmanager', 'gtag', 'ga.js', 'analytics.js',
-    'facebook.net', 'fbevents', 'mixpanel', 'hotjar', 'segment.com', 'intercom',
-    'clarity.ms', 'doubleclick', 'drift', 'hubspot',
+  // 1. Remove ONLY confirmed analytics/tracking scripts and editor overlays.
+  // Filter is EXCLUSIVELY based on the script src URL — never on inline content.
+  // GSAP, ScrollSmoother, AOS, Webflow.js, Framer runtime, etc. are preserved.
+  const TRACKING_SRC_PATTERNS = [
+    // Analytics & tag managers
+    'google-analytics.com', 'googletagmanager.com', 'gtag/js', 'analytics.js', 'ga.js',
+    // Social pixels
+    'facebook.net/signals', 'fbevents.js', 'connect.facebook.net',
+    // Heatmaps & session recording
+    'hotjar.com', 'clarity.ms', 'mouseflow.com', 'fullstory.com', 'logrocket.io',
+    // Marketing / chat tools
+    'segment.com/analytics', 'mixpanel.com', 'intercom.io', 'intercomcdn.com',
+    'drift.com', 'hubspot.com', 'hs-scripts.com', 'hs-analytics.net',
+    'doubleclick.net', 'adservice.google',
+    // Framer editor-only (not the site runtime)
     'events.framer.com', 'framer.com/edit',
-    'scrollsmoother', 'smoother-script', 'locomotive-scroll'
   ];
 
   $('script').each((_, el) => {
     const src = $(el).attr('src') || '';
-    const text = $(el).text() || '';
-    const isTracking = trackingKeywords.some(kw => src.toLowerCase().includes(kw) || text.toLowerCase().includes(kw));
+    if (!src) return; // Never remove inline scripts — they contain framework init code
+    const srcLower = src.toLowerCase();
+    const isTracking = TRACKING_SRC_PATTERNS.some(pattern => srcLower.includes(pattern));
     if (isTracking) {
       $(el).remove();
     }

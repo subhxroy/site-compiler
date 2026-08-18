@@ -53,7 +53,7 @@ export default function RootLayout({
   const personJsonLd = personSchema();
 
   return (
-    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full scroll-smooth`}>
+    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full scroll-smooth overflow-x-hidden`}>
       <head>
         <meta name="strix-verification" content="strix-verify-630d4e87255604878f201b170ae15e10" />
         <script
@@ -65,11 +65,11 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
         />
       </head>
-      <body className="min-h-full antialiased bg-[#040506] text-white flex flex-col selection:bg-[#ff6363]/30 selection:text-white">
+      <body className="min-h-full w-full antialiased bg-[#040506] text-white flex flex-col selection:bg-[#ff6363]/30 selection:text-white overflow-x-hidden">
         <PostHogProvider>
           <AuthProvider>
             <Navbar />
-            <div className="flex-1">
+            <div className="flex-1 w-full overflow-x-hidden">
               {children}
             </div>
             <Footer />

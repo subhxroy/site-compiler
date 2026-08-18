@@ -40,16 +40,18 @@ export async function GET(
     outline-offset: 3px !important;
     background-color: rgba(255, 99, 99, 0.08) !important;
   }
+  [data-sc-id].sc-selected,
   [data-sc-id]:focus, [data-sc-id]:focus-visible {
     outline: 2px solid #ff6363 !important;
     outline-offset: 3px !important;
     background-color: rgba(255, 99, 99, 0.18) !important;
-    box-shadow: 0 0 12px rgba(255, 99, 99, 0.35) !important;
+    box-shadow: 0 0 16px rgba(255, 99, 99, 0.4) !important;
   }
   img[data-sc-id] {
     cursor: pointer !important;
     -webkit-user-select: none !important;
     user-select: none !important;
+    max-width: 100% !important;
   }
   img[data-sc-id]:hover {
     outline: 2px solid #ff6363 !important;
@@ -62,6 +64,48 @@ export async function GET(
   const editorBridgeScript = `
 <script id="sitecompiler-editor-bridge-js">
 (function() {
+  let selectedNodeId = null;
+
+  function getNodeStyle(el) {
+    try {
+      const s = window.getComputedStyle(el);
+      return {
+        fontSize: s.fontSize,
+        color: s.color,
+        backgroundColor: s.backgroundColor,
+        opacity: s.opacity,
+        textAlign: s.textAlign,
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  function notifySelection(scNode) {
+    if (!scNode) return;
+    const nodeId = scNode.getAttribute('data-sc-id');
+    if (!nodeId) return;
+
+    document.querySelectorAll('.sc-selected').forEach(el => el.classList.remove('sc-selected'));
+    scNode.classList.add('sc-selected');
+    selectedNodeId = nodeId;
+
+    const tag = scNode.tagName.toLowerCase();
+    const isImg = tag === 'img';
+    const anchor = scNode.closest('a') || (tag === 'a' ? scNode : null);
+
+    window.parent.postMessage({
+      type: 'sc-select',
+      nodeId: nodeId,
+      tag: tag,
+      content: isImg ? '' : (scNode.textContent || '').trim(),
+      src: isImg ? (scNode.getAttribute('src') || '') : '',
+      alt: isImg ? (scNode.getAttribute('alt') || '') : '',
+      href: anchor ? (anchor.getAttribute('href') || '') : '',
+      styles: getNodeStyle(scNode)
+    }, '*');
+  }
+
   window.addEventListener('pointerdown', function(e) {
     const scNode = e.target.closest('[data-sc-id]');
     if (scNode && scNode.tagName.toLowerCase() !== 'img') {
@@ -72,25 +116,16 @@ export async function GET(
   window.addEventListener('click', function(e) {
     const scNode = e.target.closest('[data-sc-id]');
     if (scNode) {
+      e.preventDefault();
+      e.stopPropagation();
+      notifySelection(scNode);
+
       const tag = scNode.tagName.toLowerCase();
-      if (tag === 'img') {
-        e.preventDefault();
-        e.stopPropagation();
-        window.parent.postMessage({
-          type: 'sc-select-image',
-          nodeId: scNode.getAttribute('data-sc-id'),
-          src: scNode.getAttribute('src') || ''
-        }, '*');
-        return;
-      } else {
-        const anchor = scNode.closest('a');
-        if (anchor) {
-          e.preventDefault();
-        }
+      if (tag !== 'img') {
         scNode.setAttribute('contenteditable', 'true');
         scNode.focus();
-        return;
       }
+      return;
     }
 
     const anchor = e.target.closest('a');
@@ -98,6 +133,28 @@ export async function GET(
       e.preventDefault();
     }
   }, true);
+
+  function getElementTree() {
+    const nodes = document.querySelectorAll('[data-sc-id]');
+    const tree = [];
+    nodes.forEach(function(el) {
+      const id = el.getAttribute('data-sc-id');
+      const tag = el.tagName.toLowerCase();
+      const isImg = tag === 'img';
+      const text = isImg ? (el.getAttribute('alt') || 'Image') : (el.textContent || '').trim();
+      const snippet = text.length > 50 ? text.slice(0, 50) + '...' : text;
+
+      tree.push({
+        id: id,
+        tag: tag,
+        type: isImg ? 'image' : (tag === 'a' || el.closest('a') ? 'link' : 'text'),
+        label: snippet || tag.toUpperCase(),
+        src: isImg ? (el.getAttribute('src') || '') : undefined,
+        alt: isImg ? (el.getAttribute('alt') || '') : undefined,
+      });
+    });
+    return tree;
+  }
 
   function bindEditableNodes() {
     const editableNodes = document.querySelectorAll('[data-sc-id]');
@@ -147,9 +204,57 @@ export async function GET(
     });
 
     if (count > 0) {
-      window.parent.postMessage({ type: 'sc-ready', nodeCount: count }, '*');
+      window.parent.postMessage({
+        type: 'sc-ready',
+        nodeCount: count,
+        elements: getElementTree()
+      }, '*');
     }
   }
+
+  // Handle messages from Studio Editor parent window
+  window.addEventListener('message', function(e) {
+    if (!e.data || typeof e.data !== 'object') return;
+
+    if (e.data.type === 'sc-update-node') {
+      const { nodeId, content, src, alt, href, styles } = e.data;
+      if (!nodeId) return;
+      const el = document.querySelector('[data-sc-id="' + nodeId + '"]');
+      if (!el) return;
+
+      if (content !== undefined && el.tagName.toLowerCase() !== 'img') {
+        el.textContent = content;
+      }
+      if (src !== undefined && el.tagName.toLowerCase() === 'img') {
+        el.setAttribute('src', src);
+      }
+      if (alt !== undefined && el.tagName.toLowerCase() === 'img') {
+        el.setAttribute('alt', alt);
+      }
+      if (href !== undefined) {
+        const anchor = el.tagName.toLowerCase() === 'a' ? el : el.closest('a');
+        if (anchor) anchor.setAttribute('href', href);
+      }
+      if (styles && typeof styles === 'object') {
+        Object.keys(styles).forEach(k => {
+          if (styles[k] !== undefined) el.style[k] = styles[k];
+        });
+      }
+    } else if (e.data.type === 'sc-highlight-node') {
+      const { nodeId } = e.data;
+      if (!nodeId) return;
+      const el = document.querySelector('[data-sc-id="' + nodeId + '"]');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        notifySelection(el);
+      }
+    } else if (e.data.type === 'sc-request-tree') {
+      window.parent.postMessage({
+        type: 'sc-tree-response',
+        elements: getElementTree()
+      }, '*');
+    }
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', bindEditableNodes);

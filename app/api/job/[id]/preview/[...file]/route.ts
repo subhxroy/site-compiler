@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
+import { API_BASE_URL } from '@/lib/api-config';
 
 const MIME_MAP: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -31,6 +32,27 @@ export async function GET(
 
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
     return NextResponse.json({ error: 'Invalid job id' }, { status: 400 });
+  }
+
+  if (API_BASE_URL) {
+    try {
+      const subPath = file.map((segment) => encodeURIComponent(segment)).join('/');
+      const backendRes = await fetch(`${API_BASE_URL}/api/job/${id}/preview/${subPath}`);
+      if (backendRes.ok) {
+        const ext = path.extname(file[file.length - 1] || '').toLowerCase();
+        const contentType = backendRes.headers.get('content-type') || MIME_MAP[ext] || 'application/octet-stream';
+        const arrayBuffer = await backendRes.arrayBuffer();
+        return new NextResponse(arrayBuffer, {
+          headers: {
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=3600',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+    } catch (err) {
+      console.error('[Preview Sub-Asset Proxy Error]', err);
+    }
   }
 
   const exportHtmlDir = path.resolve(process.cwd(), 'exports', id, 'output', 'html-export');
