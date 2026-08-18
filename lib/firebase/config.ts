@@ -26,9 +26,19 @@ if (firebaseConfig.apiKey) {
 }
 
 if (auth && typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence).catch(() => {
-    if (auth) setPersistence(auth, inMemoryPersistence).catch(() => {});
-  });
+  try {
+    setPersistence(auth, browserLocalPersistence).catch(() => {
+      if (auth) {
+        setPersistence(auth, inMemoryPersistence).catch(() => {});
+      }
+    });
+  } catch {
+    if (auth) {
+      try {
+        setPersistence(auth, inMemoryPersistence).catch(() => {});
+      } catch {}
+    }
+  }
 }
 
 export { app, auth };

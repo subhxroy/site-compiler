@@ -691,11 +691,32 @@ const ANIMATION_SHIM_JS = `
     });
   }
 
+  /* ── 10. Smooth Scroll-Reveal Engine (IntersectionObserver) ── */
+  function initScrollReveal() {
+    var revealElements = document.querySelectorAll('[data-sitecompiler-reveal], [data-reveal], .reveal-on-scroll');
+    if (!revealElements.length || typeof IntersectionObserver === 'undefined') return;
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.setAttribute('data-sitecompiler-reveal', 'visible');
+          entry.target.classList.add('is-revealed');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+    revealElements.forEach(function (el) {
+      observer.observe(el);
+    });
+  }
+
   /* ── Bootstrap ── */
   function init() {
     applyBreakpoints();
     initFramerAvatar();
     init3DCarouselAndSlider();
+    initScrollReveal();
     initScrollColourText();
     initAnchorScroll();
     initMobileNav();

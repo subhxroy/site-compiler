@@ -50,11 +50,43 @@ const AuthContext = createContext<AuthContextType>({
   getIdToken: async () => null,
 });
 
+function isDatabaseClosingError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = (err as Error)?.message || String(err);
+  return /database is closing|closing\/hidden|the database connection is closing|indexeddb/i.test(msg);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(Boolean(auth));
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState('user');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      if (isDatabaseClosingError(event.reason)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    const handleError = (event: ErrorEvent) => {
+      if (isDatabaseClosingError(event.error || event.message)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleRejection);
+    window.addEventListener('error', handleError);
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleRejection);
+      window.removeEventListener('error', handleError);
+    };
+  }, []);
 
   useEffect(() => {
     if (!auth) return;
@@ -110,13 +142,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         (error) => {
           clearTimeout(timer);
           // Catch Database is closing/hidden errors silently without breaking React tree
-          if (!error?.message?.includes('closing')) {
+          if (!isDatabaseClosingError(error)) {
             console.error('[Firebase Auth Error]', error);
           }
         }
       );
-    } catch {
+    } catch (err) {
       clearTimeout(timer);
+      if (!isDatabaseClosingError(err)) {
+        console.warn('[Firebase Auth Init Warning]', err);
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
     }
@@ -129,22 +164,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      if (!isDatabaseClosingError(err)) throw err;
+    }
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
     if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
-    await signInWithEmailAndPassword(auth, email, pass);
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      if (!isDatabaseClosingError(err)) throw err;
+    }
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
     if (!auth) throw new Error('Firebase Auth is not configured. Please set NEXT_PUBLIC_FIREBASE_API_KEY.');
-    await createUserWithEmailAndPassword(auth, email, pass);
+    try {
+      await createUserWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      if (!isDatabaseClosingError(err)) throw err;
+    }
   };
 
   const signOutUser = async () => {
     if (auth) {
-      await firebaseSignOut(auth);
+      try {
+        await firebaseSignOut(auth);
+      } catch (err) {
+        if (!isDatabaseClosingError(err)) throw err;
+      }
     }
     setIsAdmin(false);
     setUserRole('user');

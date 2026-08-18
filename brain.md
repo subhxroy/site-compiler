@@ -165,7 +165,7 @@ codify/
   - Post-job UI: once payment is submitted-but-unapproved the Download button becomes a disabled "Payment Submitted — Awaiting Admin Approval" state; a **"New Export" reset button** clears job state + localStorage to start over.
 
 ### `app/admin/page.tsx`
-- 614-line client admin console (main-site flavor; a separate `admin-portal/` app also exists — see §11).
+- 875-line client admin console (main-site flavor; a separate `admin-portal/` app also exists — see §11).
 - 4 render states: auth loading → login form (email + Google) → access-denied (authenticated but role != admin) → verified admin console.
 - Verifies admin via `GET /api/admin/users` + `/api/admin/stats` with `Authorization: Bearer <idToken>`.
 - Metrics cards: registered users, export-granted count, total compilations, Render engine health with manual "Ping Engine (/health)" button (fetches `${backendUrl}/health` and updates the status card live).

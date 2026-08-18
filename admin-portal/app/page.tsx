@@ -90,11 +90,11 @@ export default function StandaloneAdminPage() {
   const handlePingBackend = useCallback(async () => {
     setPingingBackend(true);
     try {
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       const endpointsToTry = [
-        'http://localhost:3001/health',
-        'http://localhost:3000/api/health',
-        RENDER_BACKEND_URL ? `${RENDER_BACKEND_URL}/health` : '',
-        typeof window !== 'undefined' ? `${window.location.origin}/api/health` : '',
+        RENDER_BACKEND_URL ? `${RENDER_BACKEND_URL.replace(/\/$/, '')}/health` : '',
+        MAIN_SITE_URL ? `${MAIN_SITE_URL.replace(/\/$/, '')}/api/health` : '',
+        ...(isLocal ? ['http://localhost:3001/health', 'http://localhost:3000/api/health'] : []),
       ].filter(Boolean);
 
       let online = false;
@@ -121,7 +121,7 @@ export default function StandaloneAdminPage() {
         setFeedback({ type: 'success', message: 'Backend engine is ONLINE and responsive (HTTP 200 OK).' });
       } else {
         setStats((prev) => ({ ...prev, backendStatus: 'offline' }));
-        setFeedback({ type: 'error', message: 'Backend engine is unreachable or offline.' });
+        setFeedback({ type: 'error', message: 'Backend engine is unreachable or starting up from cold start.' });
       }
     } catch (err: unknown) {
       setStats((prev) => ({ ...prev, backendStatus: 'offline' }));
@@ -160,9 +160,10 @@ function isAllowlistedAdmin(email?: string | null): boolean {
         return;
       }
 
-      const apiHost = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+      const rawHost = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
         ? 'http://localhost:3000' 
         : MAIN_SITE_URL;
+      const apiHost = (rawHost || 'https://site-compiler.netlify.app').replace(/\/$/, '');
 
       // Sync user profile first to ensure role is in sync
       await fetch(`${apiHost}/api/user/sync`, {
@@ -180,12 +181,15 @@ function isAllowlistedAdmin(email?: string | null): boolean {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const [usersRes, statsRes, approvalsRes] = await Promise.all([
-        fetch(`${apiHost}/api/admin/users`, { headers }),
+        fetch(`${apiHost}/api/admin/users`, { headers }).catch((err) => {
+          console.warn('[Admin API] Users fetch failed:', err);
+          return null;
+        }),
         fetch(`${apiHost}/api/admin/stats`, { headers }).catch(() => null),
         fetch(`${apiHost}/api/admin/approvals`, { headers }).catch(() => null),
       ]);
 
-      if (usersRes.status === 401 || usersRes.status === 403) {
+      if (usersRes && (usersRes.status === 401 || usersRes.status === 403)) {
         if (!userIsAdmin) {
           setIsVerifiedAdmin(false);
           setFeedback({ type: 'error', message: 'Access Denied: You do not have Administrator permissions.' });
@@ -196,7 +200,7 @@ function isAllowlistedAdmin(email?: string | null): boolean {
 
       let usersData = { users: [] };
       try {
-        if (usersRes.ok) usersData = await usersRes.json();
+        if (usersRes && usersRes.ok) usersData = await usersRes.json();
       } catch {}
 
       const statsData = statsRes && statsRes.ok ? await statsRes.json().catch(() => null) : null;

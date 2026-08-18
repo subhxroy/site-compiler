@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 function isAdminEmail(email: string): boolean {
   const e = (email || '').toLowerCase().trim();
   if (!e) return false;
@@ -17,6 +23,13 @@ function isAdminEmail(email: string): boolean {
   return allowlist.includes(e);
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const rateLimit = checkRateLimit(req, 60, 60 * 1000);
@@ -26,7 +39,7 @@ export async function POST(req: Request) {
 
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Authorization header with Bearer token is required' }, { status: 401 });
+      return NextResponse.json({ error: 'Authorization header with Bearer token is required' }, { status: 401, headers: corsHeaders });
     }
 
     const token = authHeader.substring(7).trim();
@@ -34,7 +47,7 @@ export async function POST(req: Request) {
     try {
       decodedToken = await adminAuth.verifyIdToken(token);
     } catch {
-      return NextResponse.json({ error: 'Invalid or expired authentication token' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid or expired authentication token' }, { status: 401, headers: corsHeaders });
     }
 
     const uid = decodedToken.uid;
@@ -83,14 +96,17 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
-      status: 'ok',
-      message: 'User profile synced',
-      role: userRole,
-      isAdmin: userRole === 'admin',
-    });
+    return NextResponse.json(
+      {
+        status: 'ok',
+        message: 'User profile synced',
+        role: userRole,
+        isAdmin: userRole === 'admin',
+      },
+      { headers: corsHeaders }
+    );
   } catch (error: unknown) {
     console.error('[Admin DB] User profile sync error:', error);
-    return NextResponse.json({ error: (error as Error).message || 'Failed to sync user profile' }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message || 'Failed to sync user profile' }, { status: 500, headers: corsHeaders });
   }
 }

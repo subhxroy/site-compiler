@@ -12,6 +12,10 @@ if (SENTRY_DSN) {
     environment: process.env.NODE_ENV || 'development',
     ignoreErrors: [
       'Database is closing',
+      'Database is closing/hidden',
+      'The database connection is closing',
+      /Database is closing/i,
+      /closing\/hidden/i,
       'ResizeObserver loop limit exceeded',
       'Network request failed',
     ],
