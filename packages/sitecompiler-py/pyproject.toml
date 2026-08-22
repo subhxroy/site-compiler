@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitecompiler-py"
+version = "1.0.0"
+description = "Official Python SDK for SiteCompiler"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+]
