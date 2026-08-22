@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getJob } from '@/lib/jobs/store';
-import { API_BASE_URL } from '@/lib/api-config';
+import { API_BASE_URL, isFreeExportEnabled } from '@/lib/api-config';
 import { verifyAdminRequest } from '@/lib/firebase/verify-admin';
 import { getApprovalState } from '@/lib/firebase/approval-status';
 import { errorMessage } from '@/lib/errors';
@@ -17,6 +17,8 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid job id' }, { status: 400 });
   }
 
+  const isFreeMode = isFreeExportEnabled();
+
   if (API_BASE_URL) {
     try {
       // Admin free-pass: verify the Firebase admin ID token, then forward the
@@ -29,12 +31,16 @@ export async function GET(
       try {
         const bypassSecret = process.env.BACKEND_ADMIN_SECRET;
         if (bypassSecret) {
-          const [authResult, approval] = await Promise.all([
-            verifyAdminRequest(req).catch(() => ({ authorized: false })),
-            getApprovalState(id),
-          ]);
-          if (authResult.authorized || approval?.paymentApproved) {
+          if (isFreeMode) {
             forwardHeaders['x-sitecompiler-admin-bypass'] = bypassSecret;
+          } else {
+            const [authResult, approval] = await Promise.all([
+              verifyAdminRequest(req).catch(() => ({ authorized: false })),
+              getApprovalState(id),
+            ]);
+            if (authResult.authorized || approval?.paymentApproved) {
+              forwardHeaders['x-sitecompiler-admin-bypass'] = bypassSecret;
+            }
           }
         }
       } catch {}
@@ -71,7 +77,7 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  if (!job.paymentApproved) {
+  if (!job.paymentApproved && !isFreeMode) {
     try {
       const authResult = await verifyAdminRequest(req);
       if (!authResult.authorized) {

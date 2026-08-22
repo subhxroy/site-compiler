@@ -13,6 +13,7 @@ import { processExportJob } from '../lib/jobs/process';
 import { validateUrlForSsrf } from '../lib/security/ssrf';
 import { adminAuth, isFirebaseAdminConfigured } from '../lib/firebase/admin';
 import { processJobPatches } from '../lib/model/patch-job';
+import { isFreeExportEnabled } from '../lib/api-config';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -183,7 +184,7 @@ app.get('/api/job/:id/download', async (req: Request, res: Response) => {
     return;
   }
 
-  if (!job.paymentApproved) {
+  if (!job.paymentApproved && !isFreeExportEnabled()) {
     const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
     const isAdminBypassHeader = !!bypassSecret && req.get('x-sitecompiler-admin-bypass') === bypassSecret;
 
@@ -718,8 +719,8 @@ async function verifyModelAccess(req: Request, job: JobState | undefined): Promi
     }
   }
 
-  // 3. If job payment is already approved (unlocked export)
-  if (job.paymentApproved) return true;
+  // 3. If free export mode is enabled or job payment is already approved (unlocked export)
+  if (isFreeExportEnabled() || job.paymentApproved) return true;
 
   // 4. If job was created anonymously (no user email attached), allow creator access via job ID
   if (!job.userEmail) return true;

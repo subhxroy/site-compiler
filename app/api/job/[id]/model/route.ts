@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
-import { API_BASE_URL } from '@/lib/api-config';
+import { API_BASE_URL, isFreeExportEnabled } from '@/lib/api-config';
 import { processJobPatches } from '@/lib/model/patch-job';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getJob } from '@/lib/jobs/store';
@@ -10,6 +10,8 @@ import { adminAuth, isFirebaseAdminConfigured } from '@/lib/firebase/admin';
 async function verifyModelAuth(req: Request, jobId: string): Promise<boolean> {
   const job = getJob(jobId);
   if (!job) return false;
+
+  if (isFreeExportEnabled()) return true;
 
   const bypassSecret = process.env.ADMIN_BYPASS_SECRET;
   const bypassHeader = req.headers.get('x-sitecompiler-admin-bypass');

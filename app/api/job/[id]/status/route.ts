@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getJob, toPublicJob } from '@/lib/jobs/store';
-import { API_BASE_URL } from '@/lib/api-config';
+import { API_BASE_URL, isFreeExportEnabled } from '@/lib/api-config';
 import { getApprovalState } from '@/lib/firebase/approval-status';
 import { errorMessage } from '@/lib/errors';
 
@@ -9,6 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const isFreeMode = isFreeExportEnabled();
 
   if (API_BASE_URL) {
     const controller = new AbortController();
@@ -31,14 +32,18 @@ export async function GET(
       // written on the Netlify side. Overlay the durable Firestore approval
       // record so the client shows the correct pay/approved state in prod.
       if (backendRes.ok && data && typeof data === 'object') {
-        try {
-          const approval = await getApprovalState(id);
-          if (approval) {
-            data.paymentSubmitted = approval.paymentSubmitted;
-            data.paymentApproved = approval.paymentApproved;
+        if (isFreeMode) {
+          data.paymentApproved = true;
+        } else {
+          try {
+            const approval = await getApprovalState(id);
+            if (approval) {
+              data.paymentSubmitted = approval.paymentSubmitted;
+              data.paymentApproved = approval.paymentApproved;
+            }
+          } catch (approvalErr) {
+            console.warn('[Status Route] Firestore approval state check skipped:', approvalErr);
           }
-        } catch (approvalErr) {
-          console.warn('[Status Route] Firestore approval state check skipped:', approvalErr);
         }
       }
       return NextResponse.json(data, { status: backendRes.status });
@@ -62,14 +67,18 @@ export async function GET(
 
   const publicData = toPublicJob(job);
 
-  try {
-    const approval = await getApprovalState(id);
-    if (approval) {
-      publicData.paymentSubmitted = approval.paymentSubmitted;
-      publicData.paymentApproved = approval.paymentApproved;
+  if (isFreeMode) {
+    publicData.paymentApproved = true;
+  } else {
+    try {
+      const approval = await getApprovalState(id);
+      if (approval) {
+        publicData.paymentSubmitted = approval.paymentSubmitted;
+        publicData.paymentApproved = approval.paymentApproved;
+      }
+    } catch (approvalErr) {
+      console.warn('[Status Route] Local Firestore approval check skipped:', approvalErr);
     }
-  } catch (approvalErr) {
-    console.warn('[Status Route] Local Firestore approval check skipped:', approvalErr);
   }
 
   return NextResponse.json(publicData);

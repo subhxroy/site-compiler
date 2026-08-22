@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { getDirectBackendUrl } from '@/lib/api-config';
+import { getDirectBackendUrl, isLocalEnvironment } from '@/lib/api-config';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { AuthModal } from '@/components/auth-modal';
 import { PaywallModal } from '@/components/paywall-modal';
@@ -286,10 +286,9 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
   useEffect(() => {
     if (!jobId) return;
 
-    let consecutiveErrors = 0;
-    let pollAttempt = 0;
+    let consecutiveErrors = 0;    let pollAttempt = 0;
     const startTime = Date.now();
-    const MAX_JOB_DURATION_MS = 8 * 60 * 1000; // 8 minute max client-side timeout
+    const MAX_JOB_DURATION_MS = 15 * 60 * 1000; // 15 minute max client-side timeout for slow low-RAM backends
 
     console.log(`[POLL DEBUG] Starting status polling for jobId: ${jobId}`);
 
@@ -302,13 +301,13 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           if (prev && (prev.status === 'completed' || TERMINAL_STATUSES.includes(prev.status))) {
             return prev;
           }
-          console.warn(`[POLL DEBUG] Unfinished job ${jobId} hit 8-minute client watchdog timeout`);
+          console.warn(`[POLL DEBUG] Unfinished job ${jobId} hit 15-minute client watchdog timeout`);
           return prev
             ? {
                 ...prev,
                 status: 'failed',
                 error: 'Export process timed out. The backend engine or target site took too long to respond.',
-                progressMessage: 'Export process timed out after 8 minutes.',
+                progressMessage: 'Export process timed out after 15 minutes.',
               }
             : null;
         });
@@ -349,9 +348,9 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           }
         } else if (res.status === 404) {
           consecutiveErrors++;
-          console.warn(`[POLL DEBUG] Job ${jobId} returned 404 (attempt ${consecutiveErrors}/60)`);
-          // Only fail after 15 consecutive 404s (gives backend 22s buffer for job registration/sync)
-          if (consecutiveErrors >= 15) {
+          console.warn(`[POLL DEBUG] Job ${jobId} returned 404 (attempt ${consecutiveErrors}/120)`);
+          // Only fail after 25 consecutive 404s (gives backend buffer for job registration/sync)
+          if (consecutiveErrors >= 25) {
             setJob((prev) =>
               prev
                 ? {
@@ -368,8 +367,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           }
         } else {
           consecutiveErrors++;
-          console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors}/60)`);
-          if (consecutiveErrors >= 60) {
+          console.warn(`[POLL DEBUG] Non-OK status response ${res.status} (error count: ${consecutiveErrors}/120)`);
+          if (consecutiveErrors >= 120) {
             setJob((prev) =>
               prev
                 ? {
@@ -386,8 +385,8 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
         }
       } catch (pollErr) {
         consecutiveErrors++;
-        console.error(`[POLL DEBUG] Network error polling status (attempt ${consecutiveErrors}/60):`, pollErr);
-        if (consecutiveErrors >= 60) {
+        console.error(`[POLL DEBUG] Network error polling status (attempt ${consecutiveErrors}/120):`, pollErr);
+        if (consecutiveErrors >= 120) {
           setJob((prev) =>
             prev
               ? {
@@ -402,7 +401,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
           clearInterval(iv);
         }
       }
-    }, 1500);
+    }, 2000);
 
     return () => clearInterval(iv);
   }, [jobId]);
@@ -446,12 +445,12 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
     }
   }, [job?.logs, tab]);
 
-  // Require Sign In before export
+  // Require Sign In before export on live production sites (local open-source instances run without login)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
 
-    if (!user) {
+    if (!user && !isLocalEnvironment()) {
       setIsAuthOpen(true);
       return;
     }
@@ -740,7 +739,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                     {job.zipSizeKb && (
                       <span className="font-mono text-xs text-[#6a6b6c]">{job.zipSizeKb} KB ({job.pageCount || 1} pages)</span>
                     )}
-                    {job.paymentApproved || isAdmin ? (
+                    {job.paymentApproved || isAdmin || isLocalEnvironment() ? (
                       <a
                         href={getDirectBackendUrl(job.downloadUrl)}
                         download
@@ -749,7 +748,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                           // the Firebase ID token the download route needs to
                           // bypass the payment gate. Download via authenticated
                           // fetch + blob instead.
-                          if (!isAdmin || job.paymentApproved) return;
+                          if (!isAdmin || job.paymentApproved || isLocalEnvironment()) return;
                           e.preventDefault();
                           try {
                             const token = await getIdToken();
@@ -778,7 +777,7 @@ export default function SiteCompilerPage({ faqs }: { faqs: { question: string; a
                         className="raycast-button-primary px-3 sm:px-4 py-2 text-xs font-medium flex items-center gap-1.5 sm:gap-2 bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
                       >
                         <Icon.Download />
-                        <span>Download ZIP {isAdmin ? '(Admin Free Pass)' : '(Approved)'}</span>
+                        <span>Download ZIP {isAdmin ? '(Admin Free Pass)' : isLocalEnvironment() ? '' : '(Approved)'}</span>
                       </a>
                     ) : job.paymentSubmitted ? (
                       <button

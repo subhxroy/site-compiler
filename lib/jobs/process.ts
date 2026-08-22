@@ -6,6 +6,7 @@ import { buildNextJsExport } from '../generator/nextjs/page-assembler';
 import { createJobZip } from '../zip/build-zip';
 import { getJob, isJobActive, updateJob, stripAnsi } from './store';
 import { validateHtmlOutput, validateNextOutput, validateZip } from './validate';
+import { isFreeExportEnabled } from '../api-config';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -189,21 +190,24 @@ export async function processExportJob(jobId: string): Promise<void> {
 
     const pageCount = htmlResult.pageCount || (crawlResult.pages && crawlResult.pages.length) || 1;
     const amount = Math.max(500, Math.ceil(pageCount / 10) * 500);
+    const isFree = isFreeExportEnabled();
 
     updateJob(
       jobId,
       {
         status: 'completed',
-        progressMessage: `Export complete — ${pageCount} page(s) captured (₹${amount}). ${zipSizeKb} KB ZIP ready for approval.`,
+        progressMessage: isFree
+          ? `Export complete — ${pageCount} page(s) captured. ${zipSizeKb} KB ZIP ready for download.`
+          : `Export complete — ${pageCount} page(s) captured (₹${amount}). ${zipSizeKb} KB ZIP ready for approval.`,
         completedAt: Date.now(),
         downloadUrl: `/api/job/${jobId}/download`,
         zipSizeKb,
         pageCount,
-        amount,
-        paymentApproved: false,
+        amount: isFree ? 0 : amount,
+        paymentApproved: isFree ? true : false,
         hasModel,
       },
-      `Export completed — ${pageCount} page(s), ₹${amount}, ${zipSizeKb} KB.`
+      `Export completed — ${pageCount} page(s), ${isFree ? 'Free Local Export' : `₹${amount}`}, ${zipSizeKb} KB.`
     );
     console.log(`[job:${jobId}] COMPLETED`);
   } catch (err: unknown) {

@@ -481,8 +481,8 @@ export async function captureSite(options: CaptureOptions): Promise<CaptureResul
 
       log(`Crawling page ${pageCount}: ${currentUrl}`);
 
-      // Generous timeout for 512MB single-core CPU hosting (30s entry, 20s subpages)
-      const gotoTimeout = isEntry ? 30000 : 20000;
+      // Generous timeout for 512MB single-core CPU hosting (45s entry, 30s subpages)
+      const gotoTimeout = isEntry ? 45000 : 30000;
 
       try {
         try {

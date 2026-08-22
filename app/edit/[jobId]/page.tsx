@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { isLocalEnvironment } from '@/lib/api-config';
 import { PaywallModal } from '@/components/paywall-modal';
 import {
   ArrowLeft,
@@ -500,7 +501,7 @@ export default function EditExportPage() {
 
           <button
             onClick={() => {
-              if (isAdmin || jobData?.paymentApproved) {
+              if (isAdmin || jobData?.paymentApproved || isLocalEnvironment()) {
                 const link = document.createElement('a');
                 link.href = `/api/job/${jobId}/download`;
                 link.setAttribute('download', `sitecompiler-${jobId}.zip`);
@@ -512,17 +513,17 @@ export default function EditExportPage() {
               }
             }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              isAdmin || jobData?.paymentApproved
+              isAdmin || jobData?.paymentApproved || isLocalEnvironment()
                 ? 'bg-[#17191f] hover:bg-[#20232a] border border-[#2a2c34] text-white'
                 : 'bg-[#ff6363]/10 hover:bg-[#ff6363]/20 border border-[#ff6363]/30 text-[#ff6363]'
             }`}
           >
-            {isAdmin || jobData?.paymentApproved ? (
+            {isAdmin || jobData?.paymentApproved || isLocalEnvironment() ? (
               <Download className="w-3.5 h-3.5 text-[#ff6363]" />
             ) : (
               <Lock className="w-3.5 h-3.5 text-[#ff6363]" />
             )}
-            <span className="hidden sm:inline">{isAdmin || jobData?.paymentApproved ? 'Download ZIP' : 'Unlock ZIP'}</span>
+            <span className="hidden sm:inline">{isAdmin || jobData?.paymentApproved || isLocalEnvironment() ? 'Download ZIP' : 'Unlock ZIP'}</span>
           </button>
 
           <a

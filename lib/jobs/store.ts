@@ -58,8 +58,10 @@ const RETENTION_MS = (() => {
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_RETENTION_MS;
 })();
 
-// Max allowed job duration before watchdog marks it failed. Default 5 minutes (300,000 ms).
-const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
+import { isFreeExportEnabled } from '@/lib/api-config';
+
+// Max allowed job duration before watchdog marks it failed. Default 15 minutes (900,000 ms).
+const DEFAULT_JOB_TIMEOUT_MS = 15 * 60 * 1000;
 export const EXPORT_JOB_TIMEOUT_MS = (() => {
   const fromEnv = Number(process.env.EXPORT_JOB_TIMEOUT_MS);
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_JOB_TIMEOUT_MS;
@@ -160,6 +162,7 @@ export function createJob(url: string, format: 'html' | 'react' | 'nextjs', idem
     progressMessage: 'Job queued...',
     logs: [`[${timeStr}] Job created for ${url}`],
     createdAt: Date.now(),
+    paymentApproved: isFreeExportEnabled() ? true : false,
   };
   jobStore.set(jobId, job);
 

@@ -77,3 +77,48 @@ export function getDirectBackendUrl(path: string): string {
 
   return cleanPath;
 }
+
+/**
+ * Checks if the current execution context is a local development / open-source instance.
+ */
+export function isLocalEnvironment(): boolean {
+  if (typeof window !== 'undefined') {
+    const h = window.location.hostname;
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '0.0.0.0' ||
+      h === '::1' ||
+      process.env.NEXT_PUBLIC_ALLOW_FREE_EXPORTS === 'true' ||
+      process.env.NEXT_PUBLIC_REQUIRE_AUTH === 'false'
+    );
+  }
+
+  // Server-side detection
+  const isCloudDeployment = !!(
+    process.env.NETLIFY ||
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    (process.env.RENDER && process.env.NODE_ENV === 'production')
+  );
+
+  return (
+    !isCloudDeployment ||
+    process.env.ALLOW_FREE_EXPORTS === 'true' ||
+    process.env.NODE_ENV === 'development'
+  );
+}
+
+/**
+ * Determines whether the payment/approval gate should be bypassed (free export mode).
+ */
+export function isFreeExportEnabled(): boolean {
+  if (process.env.ALLOW_FREE_EXPORTS === 'true' || process.env.NEXT_PUBLIC_ALLOW_FREE_EXPORTS === 'true') {
+    return true;
+  }
+  if (process.env.DISABLE_PAYWALL === 'true' || process.env.NEXT_PUBLIC_DISABLE_PAYWALL === 'true') {
+    return true;
+  }
+  return isLocalEnvironment();
+}
+
