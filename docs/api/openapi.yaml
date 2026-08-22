@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: SiteCompiler Public API
+  version: 1.0.0
+  description: REST API specification for programmatically triggering web page compilation, polling pipeline progress, and downloading production framework packages (Next.js, Astro, Svelte, Vue, Remix).
+  contact:
+    name: Subhankar Roy
+    email: contact.subhroy@gmail.com
+    url: https://sitecompiler.dev
+servers:
+  - url: https://site-compiler.onrender.com
+    description: Live Render Backend Cluster
+  - url: http://localhost:3001
+    description: Local Standalone Development Server
+
+paths:
+  /api/export:
+    post:
+      summary: Submit new website compilation job
+      operationId: createExportJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  example: "https://example.com"
+                format:
+                  type: string
+                  enum: [html, react, nextjs, astro, svelte, vue, remix]
+                  default: nextjs
+      responses:
+        "200":
+          description: Job successfully created or retrieved via idempotency
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                    example: "job_1787421485252_3y8cs"
+                  status:
+                    type: string
+                    example: "pending"
+        "400":
+          description: Invalid URL or SSRF protection failure
+        "429":
+          description: Rate limit exceeded (15 exports per minute)
+
+  /api/job/{id}/status:
+    get:
+      summary: Get real-time status and logs for a compilation job
+      operationId: getJobStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status and metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Job ID not found or expired
+
+  /api/job/{id}/download:
+    get:
+      summary: Download compiled ZIP archive
+      operationId: downloadJobZip
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ZIP package binary
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Payment or admin approval required
+
+  /api/job/{id}/cancel:
+    post:
+      summary: Cancel an active running job
+      operationId: cancelJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job successfully cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+
+  /api/job/{id}/model:
+    get:
+      summary: Retrieve the editable AST Site Model
+      operationId: getSiteModel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Site Model JSON
+        "404":
+          description: Site Model not generated for this export
+
+components:
+  schemas:
+    Job:
+      type: object
+      required:
+        - id
+        - url
+        - status
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        format:
+          type: string
+          enum: [html, react, nextjs, astro, svelte, vue, remix]
+        status:
+          type: string
+          enum: [pending, crawling, parsing, validating, detecting, generating, validating-output, zipping, completed, failed, cancelled]
+        progressMessage:
+          type: string
+        logs:
+          type: array
+          items:
+            type: string
+        downloadUrl:
+          type: string
+        zipSizeKb:
+          type: integer
+        pageCount:
+          type: integer
+        amount:
+          type: integer
+        paymentSubmitted:
+          type: boolean
+        paymentApproved:
+          type: boolean
+        hasModel:
+          type: boolean
+        error:
+          type: string
