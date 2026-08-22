@@ -1,0 +1,27 @@
+{
+  "name": "@sitecompiler/sdk",
+  "version": "1.0.0",
+  "description": "Official TypeScript/JavaScript SDK for the SiteCompiler Website Compilation API",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test"
+  },
+  "keywords": [
+    "sitecompiler",
+    "compiler",
+    "web-crawler",
+    "nextjs",
+    "react",
+    "astro",
+    "svelte",
+    "vue"
+  ],
+  "author": "Subhankar Roy",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
