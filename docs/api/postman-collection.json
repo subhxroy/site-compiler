@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "SiteCompiler API Collection",
+    "description": "Postman API test collection for SiteCompiler REST endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Submit Export Job",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://subhxroy.framer.website\",\n  \"format\": \"nextjs\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/export",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "export"]
+        }
+      }
+    },
+    {
+      "name": "Get Job Status",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/job/{{jobId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "job", "{{jobId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "Download ZIP Package",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/job/{{jobId}}/download",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "job", "{{jobId}}", "download"]
+        }
+      }
+    },
+    {
+      "name": "Get Site Model (Visual Editor)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/job/{{jobId}}/model",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "job", "{{jobId}}", "model"]
+        }
+      }
+    },
+    {
+      "name": "Cancel Job",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "{{baseUrl}}/api/job/{{jobId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "job", "{{jobId}}", "cancel"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://site-compiler.onrender.com"
+    },
+    {
+      "key": "jobId",
+      "value": "job_1787421485252_3y8cs"
+    }
+  ]
+}
