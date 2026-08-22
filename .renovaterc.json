@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base",
+    ":semanticCommits",
+    ":separateMajorMinor",
+    ":separateMinorPatch"
+  ],
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["*"],
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "semanticCommitScope": "dev-deps"
+    },
+    {
+      "matchPackageNames": ["next", "react", "react-dom", "playwright"],
+      "groupName": "core-framework"
+    }
+  ],
+  "prConcurrentLimit": 30,
+  "prHourlyLimit": 10,
+  "rebaseWhen": "auto",
+  "reviewers": ["subhxroy"]
+}
