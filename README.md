@@ -2,16 +2,19 @@
 
 # ⚡ SiteCompiler
 
-**Convert any published website into production-ready Static HTML, React TSX, or Next.js 16 + Tailwind CSS codebases.**
+**Enterprise Multi-Target Website Compilation Platform: Convert any published website into production-ready Next.js 16, Astro 4, SvelteKit 2, Vue 3/Nuxt 3, Remix, or Static HTML codebases.**
 
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
+[![Astro 4](https://img.shields.io/badge/Astro-4.0-FF5D01?style=for-the-badge&logo=astro)](https://astro.build/)
+[![SvelteKit 2](https://img.shields.io/badge/SvelteKit-2.0-FF3E00?style=for-the-badge&logo=svelte)](https://kit.svelte.dev/)
+[![Vue 3](https://img.shields.io/badge/Vue-3.0-4FC08D?style=for-the-badge&logo=vuedotjs)](https://vuejs.org/)
+[![Remix](https://img.shields.io/badge/Remix-2.0-000000?style=for-the-badge&logo=remix)](https://remix.run/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
-[![Firebase](https://img.shields.io/badge/Firebase-12-FFCA28?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-[Demo](https://site-compiler.netlify.app) · [Features](#-key-features) · [Quickstart](#-quickstart) · [Architecture](#-architecture) · [API Documentation](#-api-reference)
+[Live Demo](https://site-compiler.netlify.app) · [Features](#-key-features) · [Quickstart](#-quickstart) · [Architecture](#-architecture) · [SDKs](#-official-client-sdks) · [API Specs](#-api-reference)
 
 ---
 
@@ -19,28 +22,34 @@
 
 ## 🌟 Overview
 
-**SiteCompiler** is an enterprise-grade website extraction and code compilation platform. It crawls published web pages (from Framer, Webflow, Wix, Squarespace, or custom static sites), parses DOM element structures, extracts assets (images, SVGs, custom fonts, stylesheets), and reconstructs them into clean, modular codebases.
+**SiteCompiler** is an enterprise-grade website extraction and multi-target code compilation platform. It crawls published web pages (from Framer, Webflow, Wix, Squarespace, or custom web apps), parses DOM element structures, extracts assets (images, SVGs, custom fonts, stylesheets), and reconstructs them into clean, modular, and idiomatic codebases across modern frontend ecosystems.
 
-Whether you need a lightweight **Static HTML bundle**, modular **React TSX components**, or a full **Next.js 16 App Router project**, SiteCompiler builds the complete project structure and packages it into a downloadable `.zip` archive.
+Whether you need a full **Next.js 16 App Router project**, **Astro 4.0 static layout**, **SvelteKit 2 reactive app**, **Nuxt 3 composition framework**, or **Remix route bundle**, SiteCompiler builds the complete project structure and packages it into a downloadable `.zip` archive.
 
 ---
 
 ## ⚡ Key Features
 
-- **🌐 Multi-Engine Code Generator**:
+- **🌐 Multi-Target Framework Compilation**:
+  - **Next.js 16**: App Router hierarchy (`app/page.tsx`, `components/`, `public/`, `tsconfig.json`).
+  - **Astro 4.0**: Static `.astro` component layouts and zero-JS hydration islands.
+  - **SvelteKit 2**: Svelte 5 Single-File Components (`.svelte`), `app.html`, and file routing.
+  - **Vue 3 / Nuxt 3**: Composition API templates (`.vue`), Pinia stores, and Nuxt 3 configurations.
+  - **Remix / Vite**: Route modules with loader functions and meta handlers.
   - **Static HTML5**: Zero-dependency Semantic HTML5, CSS3, and JavaScript bundle.
-  - **React TSX**: Modular React components styled with utility-first Tailwind CSS.
-  - **Next.js 16**: Fully scaffolded App Router project (`app/page.tsx`, `components/`, `public/`, `package.json`, `tsconfig.json`).
-- **🔐 Firebase Authentication & Firestore Cockpit**:
-  - Google 1-Click Sign-In & Email/Password Authentication.
-  - Automatic export history persistence in Firebase Firestore (`users/{uid}/exports`).
-  - Seamless dual-mode fallback using Firebase Admin SDK (`site-compiler-firebase-adminsdk-*.json`).
-- **🎨 Raycast-Inspired Cyberpunk Interface**:
-  - Live progress logs streaming directly to a dark-mode terminal console.
-  - Responsive multi-viewport preview switcher (Desktop, Tablet, Mobile).
-  - State preservation across page reloads via URL `?jobId=` and `localStorage`.
-- **🚀 Job Lifecycle & Watchdogs**:
-  - 24h job retention with lazy cleanup (stale crawl dirs + ZIPs purged on every new job); 5-min per-job watchdog force-fails hung phases; 2.5-min crawl budget so a slow site can't hang the queue.
+- **🧩 20+ Accessible UI Component Registry (`lib/registry/`)**:
+  - Button, Badge, Card, Input, Accordion, Dialog, Modal, Dropdown Menu, Tabs, Toast, Navbar, Data Table, Carousel, Tooltip, Progress, Pagination, Sidebar, Sheet, Popover, Switch, and Form.
+  - Conversion-ready section templates: Hero Section, Pricing Table, Testimonials Grid, FAQ Accordion, Contact Form.
+- **📦 Official Client SDKs**:
+  - **TypeScript / Node.js SDK** (`@sitecompiler/sdk`): Typed client with polling utilities and error mapping.
+  - **Python SDK** (`sitecompiler-py`): PyPI client with Pydantic schemas and synchronous resources.
+- **🔐 Dual-Mode Authentication & Security**:
+  - Zero-auth open-source mode on `localhost` development servers.
+  - Production Google 1-Click Sign-In & Email Authentication via Firebase.
+  - Multi-tier SSRF protection (lexical IP blocklist + async DNS resolution guard).
+- **🚀 Real-Time Visual Content Editor**:
+  - Standalone in-browser AST editor with node-level inline text and media editing.
+  - Stable Node ID tagger preserving 100% untouched DOM structures during visual content patches.
 
 ---
 
@@ -63,15 +72,15 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
                                     |  (CSS Extraction, Fonts, Media, SVGs)   |
                                     +-----------------------------------------+
                                                          |
-                                 +-----------------------+-----------------------+
-                                 |                       |                       |
-                                 v                       v                       v
-                      +--------------------+   +--------------------+   +--------------------+
-                      |   Static HTML5     |   |     React TSX      |   |   Next.js 16 App   |
-                      |    Generator       |   |     Generator      |   |   Router Scaffold  |
-                      +--------------------+   +--------------------+   +--------------------+
-                                 |                       |                       |
-                                 +-----------------------+-----------------------+
+                   +-------------------+-----------------+-------------------+-------------------+
+                   |                   |                 |                   |                   |
+                   v                   v                 v                   v                   v
+        +--------------------+ +---------------+ +---------------+ +---------------+ +---------------+
+        |   Next.js 16 App   | |    Astro 4    | |  SvelteKit 2  | |  Vue 3/Nuxt 3 | |  Remix / Vite |
+        |   Router Scaffold  | |   Generator   | |   Generator   | |   Generator   | |   Generator   |
+        +--------------------+ +---------------+ +---------------+ +---------------+ +---------------+
+                   |                   |                 |                   |                   |
+                   +-------------------+-----------------+-------------------+-------------------+
                                                          |
                                                          v
                                     +-----------------------------------------+
@@ -80,8 +89,38 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
                                                          |
                                                          v
                                     +-----------------------------------------+
-                                    |   Firebase Admin SDK & User History     |
+                                    |    Production Export ZIP / Site Model   |
                                     +-----------------------------------------+
+```
+
+---
+
+## 📦 Official Client SDKs
+
+### TypeScript / Node.js
+```bash
+npm install @sitecompiler/sdk
+```
+```typescript
+import { SiteCompilerClient } from '@sitecompiler/sdk';
+
+const client = new SiteCompilerClient({ baseUrl: 'https://site-compiler.onrender.com' });
+const job = await client.jobs.create({ url: 'https://example.com', format: 'nextjs' });
+const completed = await client.jobs.pollUntilComplete(job.id);
+const zipBuffer = await client.exports.downloadZip(job.id);
+```
+
+### Python
+```bash
+pip install sitecompiler-py
+```
+```python
+from sitecompiler import SiteCompilerClient
+
+client = SiteCompilerClient(base_url="https://site-compiler.onrender.com")
+job = client.jobs.create(url="https://example.com", format="astro")
+completed = client.jobs.poll_until_complete(job.id)
+zip_bytes = client.exports.download_zip(job.id)
 ```
 
 ---
@@ -90,7 +129,7 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
 
 ### Prerequisites
 
-- **Node.js**: `v20+` (Render and Netlify both pin Node 20)
+- **Node.js**: `v20+`
 - **npm** or **pnpm** / **yarn**
 
 ### Installation
@@ -106,26 +145,12 @@ Whether you need a lightweight **Static HTML bundle**, modular **React TSX compo
    npm install
    ```
 
-3. **Install Playwright browsers**:
+3. **Install Playwright browser binaries**:
    ```bash
    npx playwright install chromium
    ```
 
-4. **Configure Environment Variables**:
-   Create a `.env.local` file in the root directory (see `.env.example`):
-   ```env
-   PORT=3000
-   NEXT_PUBLIC_API_URL=http://localhost:3001      # Backend engine base (dev → Express on :3001)
-   RENDER_BACKEND_URL=http://localhost:3001       # Direct browser→backend calls (bypasses the Netlify proxy)
-   FRONTEND_URL=http://localhost:3000             # Origin the backend's CORS allowlist accepts
-
-   # Firebase Admin (optional in dev — required for payment approvals, admin sync, history)
-   FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account", ...}
-   ```
-
-   Firebase *client* keys (`NEXT_PUBLIC_FIREBASE_API_KEY`, authDomain, projectId, etc.) are **optional**: `lib/firebase/config.ts` ships hardcoded dev fallbacks and skips Firebase init entirely when the API key is unset.
-
-5. **Start Development Server**:
+4. **Start Development Server**:
    ```bash
    npm run dev        # frontend only (:3000)
    # or
@@ -141,36 +166,32 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```
 site-compiler/
 ├── app/                        # Next.js 16 App Router routes
-│   ├── (exports)/              # 15 SEO landing pages (Framer/Webflow/Wix → Next.js 16, …)
-│   ├── admin/                  # In-app admin console (users, approvals, engine health)
-│   ├── api/                    # Serverless API: export, payment, job status/cancel/restart/download, admin, user, health, og
-│   ├── blog/ docs/ changelog/ features/ pricing/ roadmap/ status/
-│   ├── about/ contact/ privacy/ terms/ history/
+│   ├── (exports)/              # Framework conversion landing pages
+│   ├── admin/                  # In-app admin console (approvals, engine health)
+│   ├── api/                    # Serverless API: export, job status/cancel/download, model
+│   ├── edit/[jobId]/           # Visual AST page editor
 │   ├── layout.tsx              # Root layout with AuthProvider & Navigation
-│   └── page.tsx                # Main interactive compiler workspace (client-page)
-├── components/                 # UI: navbar, footer, auth-modal, paywall-modal, export-page-template
+│   └── page.tsx                # Main compiler workspace
+├── components/                 # Core UI: navbar, footer, auth-modal, paywall-modal
 ├── lib/                        # Core compilation engine & utilities
-│   ├── crawler/                # Playwright capture (screenshots, assets, crawl watchdog)
+│   ├── crawler/                # Playwright capture (screenshots, assets, watchdog)
 │   ├── parser/                 # dom-cleaner, css-parser, asset-pipeline
-│   ├── detector/               # Anthropic section detection (+ heuristic fallback)
-│   ├── generator/              # HTML + Next.js/React generators, JSX builder, Tailwind mapper, animation shim
+│   ├── generator/              # Next.js, Astro, Svelte, Vue, Remix generator engines
+│   ├── registry/               # 20+ accessible UI components & section templates
 │   ├── jobs/                   # Job state machine, pipeline orchestrator, validators
 │   ├── zip/                    # AdmZip packaging (README, offline assets)
-│   ├── firebase/               # Client + Admin SDK, auth-context, verify-admin, approval-status
-│   ├── security/               # SSRF guards (lexical + DNS-rebind), rate limiter
-│   ├── seo/                    # JSON-LD schema builders + metadata + OG route
-│   └── content/                # MDX loaders + RSS/Atom/JSON feeds
-├── server/                     # Express backend (Render) — engine API + payment mirror
-├── scripts/                    # keep-alive + test harness (phase1–4, smoke, e2e, mock-job)
-├── content/                    # MDX sources (blog, docs)
-├── admin-portal/               # Standalone static admin app (admin.sitecompiler.app)
-├── public/                     # Brand assets + .well-known/security.txt
-├── exports/                    # Temp job output (git-ignored)
-├── firestore.rules             # Firebase Firestore security rules
-├── firebase.json               # Firebase CLI deployment spec
-├── render.yaml                 # Render blueprint (sitecompiler-backend, Node 20, chromium)
-├── netlify.toml                # Netlify frontend config (Node 20)
-└── package.json                # Dependencies & project metadata
+│   └── security/               # Anti-SSRF guards (lexical + DNS-rebind)
+├── packages/                   # Official Client SDKs
+│   ├── sitecompiler-sdk/       # TypeScript / Node.js SDK
+│   └── sitecompiler-py/        # Python SDK (PyPI package)
+├── docs/                       # OpenAPI 3.1 & Architecture Documentation
+│   ├── api/                    # OpenAPI 3.1 YAML & Postman Collection
+│   ├── architecture/           # System design & threat models
+│   └── deployment/             # Docker & Kubernetes guides
+├── server/                     # Express backend (Render) — engine API
+├── scripts/                    # Test harnesses, batch PR runners, smoke tests
+├── public/                     # Static assets & brand media
+└── package.json                # Dependencies & scripts
 ```
 
 ---
@@ -178,7 +199,8 @@ site-compiler/
 ## 🔒 Security & Privacy
 
 - **Protected Secrets**: Service account credentials (`*-firebase-adminsdk-*.json`) and `.env.local` files are explicitly excluded via `.gitignore` and are **never committed to public repositories**.
-- **Admin SDK Isolation**: Firebase Admin operations use isolated server endpoints to bypass client-side security rule restrictions securely.
+- **SSRF Mitigation**: Strict RFC-1918 private IP blocking and pre-flight DNS rebinding prevention.
+- **PII Redaction**: Public polling endpoints automatically redact financial and user identifiers.
 
 ---
 
@@ -190,6 +212,6 @@ This project is licensed under the [MIT License](LICENSE).
 
 <div align="center">
 
-Crafted with ❤️ by [Subhankar Roy](https://github.com/subhxroy)
+Crafted by [Subhankar Roy](https://github.com/subhxroy)
 
 </div>
