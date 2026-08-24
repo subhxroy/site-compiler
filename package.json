@@ -15,7 +15,7 @@
     "test": "npx tsx tests/run-all.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
+    "@anthropic-ai/sdk": "^0.120.0",
     "@opentelemetry/api": "^1.9.1",
     "@sentry/nextjs": "^10.69.0",
     "adm-zip": "^0.6.0",
