@@ -34,7 +34,7 @@
     "playwright": "^1.62.1",
     "postcss": "^8.5.25",
     "posthog-js": "^1.414.0",
-    "posthog-node": "^5.48.1",
+    "posthog-node": "^5.51.1",
     "prettier": "^3.9.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
